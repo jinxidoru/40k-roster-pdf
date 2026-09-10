@@ -1,0 +1,12 @@
+# Data (cloned upstream, large, refreshable via git pull)
+data/
+
+# Generated output
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store

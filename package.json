@@ -1,0 +1,13 @@
+{
+  "name": "mk40k",
+  "version": "0.1.0",
+  "description": "Generate printable quick-reference PDF sheets for Warhammer 40k armies from BSData/wh40k-11e data.",
+  "type": "module",
+  "bin": {
+    "mk40k": "scripts/build.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.js armies/imperial-fists.json"
+  },
+  "license": "MIT"
+}

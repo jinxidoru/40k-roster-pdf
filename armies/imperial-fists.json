@@ -1,0 +1,24 @@
+{
+  "name": "Imperial Fists Strike Force",
+  "faction": "Imperial Fists",
+  "detachment": "Gladius Task Force",
+  "points": 2000,
+  "units": [
+    { "sheet": "Intercessor Squad", "models": 10, "attach": ["Captain", "Apothecary"] },
+    { "sheet": "Captain", "enhancement": "The Honour Vehement" },
+    { "sheet": "Apothecary" },
+    { "sheet": "Land Speeder" },
+    { "sheet": "Redemptor Dreadnought" },
+    { "sheet": "Terminator Squad", "models": 5, "attach": ["Darnath Lysander", "Ancient in Terminator Armour"] },
+    { "sheet": "Darnath Lysander" },
+    { "sheet": "Ancient in Terminator Armour" }
+  ],
+  "stratagems": [
+    {
+      "name": "Fury of the First",
+      "cp": 2,
+      "phase": "Fight phase",
+      "text": "Use when a TERMINATOR unit from your army is selected to fight. Until the end of the phase, improve the Armour Penetration characteristic of melee weapons equipped by models in that unit by 1."
+    }
+  ]
+}
