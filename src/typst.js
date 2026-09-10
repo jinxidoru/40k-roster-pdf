@@ -10,6 +10,45 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HELPERS = join(__dirname, '..', 'templates', 'helpers.typ');
 
+// Faction accent colors (header bar / borders). Chosen dark enough that the
+// bar's white bold text stays readable. Matched case-insensitively; the first
+// key found as a substring of the army's faction wins, else DEFAULT_ACCENT.
+const FACTION_COLORS = {
+  orks: '#4c7a2c',                 // Goff green
+  'imperial fists': '#c8102e',     // (their yellow is unreadable under white text)
+  'blood angels': '#8f1a1a',
+  'dark angels': '#1f3d2b',
+  'space wolves': '#3a5566',
+  ultramarines: '#1f3a6e',
+  'grey knights': '#3b4a52',
+  necrons: '#2f6b4f',
+  aeldari: '#2b6b8f',
+  drukhari: '#3a2b4f',
+  tyranids: '#5a2b6b',
+  "t'au empire": '#8a5a1f',
+  tau: '#8a5a1f',
+  "adepta sororitas": '#6b1f2b',
+  'astra militarum': '#4a5230',
+  'adeptus custodes': '#7a5a12',
+  'adeptus mechanicus': '#7a1f1f',
+  'chaos space marines': '#3f2b2b',
+  'death guard': '#5a5f2a',
+  'thousand sons': '#1f6b6b',
+  'world eaters': '#7a1f1f',
+  'leagues of votann': '#7a5a1f',
+  'genestealer cults': '#6b2b5a',
+};
+const DEFAULT_ACCENT = '#c8102e';
+
+function accentFor(faction) {
+  const f = (faction || '').toLowerCase();
+  if (FACTION_COLORS[f]) return FACTION_COLORS[f];
+  for (const key of Object.keys(FACTION_COLORS)) {
+    if (f.includes(key)) return FACTION_COLORS[key];
+  }
+  return DEFAULT_ACCENT;
+}
+
 // Clean rules text: drop nbsp, strip the dataset's **/^^ markup, collapse space.
 function clean(s) {
   return String(s ?? '')
@@ -63,6 +102,9 @@ function rosterTable(units) {
     `#table(\n` +
     `  columns: (1fr, auto, auto, auto, auto, auto, auto, auto, auto),\n` +
     `  align: (left, center, center, center, center, center, center, center, center),\n` +
+    // Header keeps its accent cells; body rows get faint alternating shading so
+    // the eye can track a row across the table.
+    `  fill: (_, row) => if row != 0 and calc.odd(row) { rgb("#f2f2f2") },\n` +
     `  ${header},\n` +
     rows.map((r) => `  ${r},`).join('\n') +
     `\n)\n`
@@ -127,7 +169,7 @@ function unitDetail(u) {
   if (wt) parts.push(wt.trimEnd());
 
   if (u.abilities.length) {
-    parts.push(`#text(size: 6.9pt)[#text(weight: "bold")[Abilities. ] ${abilitiesInline(u.abilities)}]`);
+    parts.push(`#text(size: 6.9pt)[${abilitiesInline(u.abilities)}]`);
   }
   if (u.enhancement) {
     parts.push(`#text(size: 6.9pt, fill: accent)[#text(weight: "bold")[Enhancement — ${ts(u.enhancement.name)} (${u.enhancement.points} pts). ] ${ts(u.enhancement.text)}]`);
@@ -153,9 +195,16 @@ function abilitiesInline(abilities) {
 
 export function renderTypst(army) {
   const helpers = readFileSync(HELPERS, 'utf8');
-  let doc = helpers + '\n\n';
+  // Inject the faction accent BEFORE the helpers so its functions capture it.
+  const accent = `#let accent = rgb("${accentFor(army.meta.faction)}")\n`;
+  let doc = accent + helpers + '\n\n';
 
-  const sub = [army.meta.faction, army.meta.detachment, army.meta.points ? `${army.meta.points} pts` : '']
+  const sub = [
+    army.meta.faction,
+    army.meta.detachment,
+    army.meta.battleSize,
+    army.meta.points ? `${army.meta.points} pts` : '',
+  ]
     .filter(Boolean)
     .join('  ·  ');
   doc += `#sheettitle(${ts(army.meta.name)}, ${ts(sub)})\n\n`;

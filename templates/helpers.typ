@@ -6,7 +6,8 @@
 #set text(font: ("Helvetica Neue", "Arial"), size: 7.6pt)
 #set par(leading: 0.42em)
 
-#let accent = rgb("#c8102e")      // Imperial Fists yellow reads poorly on white; red header bar
+// NOTE: `accent` (the faction color) is injected by typst.js immediately above
+// this file, so it is in scope here. See FACTION_COLORS in src/typst.js.
 #let ink = rgb("#1a1a1a")
 #let faint = luma(150)
 #let band = luma(238)

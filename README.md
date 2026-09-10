@@ -39,10 +39,12 @@ unit with its loadout.
 - **Roster table** — every unit in one row: M / T / Sv / Inv / W / Ld / OC / Pts.
 - **Datasheets** — per unit: weapon tables (Rng / A / BS-WS / S / AP / D + keywords),
   abilities, keywords, and any enhancement.
-- **Army rule** (e.g. Oath of Moment).
+- **Army rule** (e.g. Oath of Moment) and the detachment's army-faction rule
+  (e.g. Wrath of Dorn).
 
-Roster exports don't include detachment-rule or stratagem text, so those are not
-shown (the detachment name still appears in the header).
+The header bar is colored by faction automatically (Imperial Fists red, Orks
+green, etc. — see `FACTION_COLORS` in `src/typst.js`). Roster exports don't
+include detachment-stratagem text, so that section is not shown.
 
 ## How it works
 

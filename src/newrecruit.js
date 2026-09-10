@@ -83,6 +83,9 @@ function buildDatasheet(sel) {
         seenWeapon.add(key);
         (tn === 'Ranged Weapons' ? ranged : melee).push({ name: p.name, chars });
       } else if (tn === 'Abilities' && !weaponNode) {
+        // "Leader" and "Support" only list which units this model can attach to
+        // — reference for list-building, not needed during play.
+        if (/^(leader|support)$/i.test(p.name)) continue;
         if (seenAbility.has(p.name)) continue;
         seenAbility.add(p.name);
         abilities.push({ name: p.name, text: charMap(p).Description || '' });
@@ -129,18 +132,39 @@ function findDetachment(forces) {
   return '';
 }
 
-// Army-wide rules (e.g. Oath of Moment), de-duplicated by name.
-function collectForceRules(forces) {
+// Army-wide and detachment rules, de-duplicated by name. Force-level rules
+// (e.g. Oath of Moment) plus rules attached to the chosen Detachment selection
+// (e.g. Wrath of Dorn) — but NOT weapon keyword USRs, which live on weapons.
+function collectArmyRules(forces) {
   const seen = new Set();
   const rules = [];
-  for (const force of forces) {
-    for (const r of force.rules || []) {
-      if (!r.name || seen.has(r.name)) continue;
+  const add = (r) => {
+    if (r && r.name && !seen.has(r.name)) {
       seen.add(r.name);
       rules.push({ name: r.name, text: r.description || '' });
     }
+  };
+  for (const force of forces) {
+    for (const r of force.rules || []) add(r);
+    for (const sel of force.selections || []) {
+      if (primaryCategory(sel) === 'Configuration' && sel.name === 'Detachment') {
+        for (const node of subtree(sel)) for (const r of node.rules || []) add(r);
+      }
+    }
   }
   return rules;
+}
+
+// A chosen Configuration option, e.g. Battle Size -> "Incursion".
+function findConfigChoice(forces, name) {
+  for (const force of forces) {
+    for (const sel of force.selections || []) {
+      if (sel.name === name && (sel.selections || []).length) {
+        return sel.selections[0].name;
+      }
+    }
+  }
+  return '';
 }
 
 function factionFromCatalogue(name) {
@@ -173,10 +197,10 @@ export function parseNewRecruit(path) {
     }
   }
 
-  // Attach army-wide rules to the first unit so the renderer's shared
-  // rules section (which de-dupes across units) lists them once.
-  const forceRules = collectForceRules(forces);
-  if (units.length && forceRules.length) units[0].rules = forceRules;
+  // Attach army-wide + detachment rules to the first unit so the renderer's
+  // shared rules section (which de-dupes across units) lists them once.
+  const armyRules = collectArmyRules(forces);
+  if (units.length && armyRules.length) units[0].rules = armyRules;
 
   const totalCost = (roster.costs || []).find((c) => c.name === 'pts');
   const points = totalCost
@@ -184,18 +208,14 @@ export function parseNewRecruit(path) {
     : units.reduce((sum, u) => sum + (u.points || 0), 0);
 
   const detachment = findDetachment(forces);
-  if (detachment) {
-    warnings.push(
-      `Detachment "${detachment}" set. Detachment rules and stratagems are not ` +
-      `included in roster exports, so those sections are omitted.`,
-    );
-  }
+  const battleSize = findConfigChoice(forces, 'Battle Size').split(' (')[0];
 
   return {
     meta: {
       name: roster.name || 'Untitled Army',
       faction: factionFromCatalogue(forces[0]?.catalogueName),
       detachment,
+      battleSize,
       points,
     },
     units,
