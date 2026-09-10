@@ -4,14 +4,40 @@
   "detachment": "Gladius Task Force",
   "points": 2000,
   "units": [
-    { "sheet": "Intercessor Squad", "models": 10, "attach": ["Captain", "Apothecary"] },
-    { "sheet": "Captain", "enhancement": "The Honour Vehement" },
-    { "sheet": "Apothecary" },
-    { "sheet": "Land Speeder" },
-    { "sheet": "Redemptor Dreadnought" },
-    { "sheet": "Terminator Squad", "models": 5, "attach": ["Darnath Lysander", "Ancient in Terminator Armour"] },
+    {
+      "sheet": "Intercessor Squad",
+      "models": 10,
+      "attach": ["Captain", "Apothecary"],
+      "weapons": ["bolt pistol", "bolt rifle", "close combat weapon"]
+    },
+    {
+      "sheet": "Captain",
+      "enhancement": "The Honour Vehement",
+      "weapons": ["bolt pistol", "close combat", "master-crafted bolter"]
+    },
+    {
+      "sheet": "Apothecary",
+      "weapons": ["absolver", "close combat", "reductor"]
+    },
+    {
+      "sheet": "Land Speeder",
+      "weapons": ["close-combat", "multi-melta", "gatling cannon", "stormfury"]
+    },
+    {
+      "sheet": "Redemptor Dreadnought",
+      "weapons": ["heavy flamer", "heavy onslaught gatling cannon", "redemptor fist", "fragstorm", "icarus"]
+    },
+    {
+      "sheet": "Terminator Squad",
+      "models": 5,
+      "attach": ["Darnath Lysander", "Ancient in Terminator Armour"],
+      "weapons": ["power fist", "storm bolter"]
+    },
     { "sheet": "Darnath Lysander" },
-    { "sheet": "Ancient in Terminator Armour" }
+    {
+      "sheet": "Ancient in Terminator Armour",
+      "weapons": ["power fist", "storm bolter"]
+    }
   ],
   "stratagems": [
     {

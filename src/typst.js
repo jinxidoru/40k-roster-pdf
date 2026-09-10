@@ -79,10 +79,11 @@ function weaponTable(u) {
     const c = w.chars;
     const skill = c.BS || c.WS || '—';
     const kw = clean(c.Keywords || '');
+    const range = c.Range && c.Range !== 'Melee' ? c.Range : '—';
     return [
       `[${w.kind}]`,
       ts(w.name),
-      ts(c.Range || '—'),
+      ts(range),
       ts(c.A || '—'),
       ts(skill),
       ts(c.S || '—'),
@@ -105,12 +106,12 @@ function weaponTable(u) {
 }
 
 function unitDetail(u) {
-  let out = '';
   const parts = [];
-  if (u.models > 1) parts.push(`${u.models} models`);
-  if (u.points != null) parts.push(`${u.points} pts`);
-  if (u.keywords.length) parts.push(u.keywords.join(', '));
-  out += `#unitband(${ts(u.name)}, ${ts(parts.join('  ·  '))})\n`;
+  const meta = [];
+  if (u.models > 1) meta.push(`${u.models} models`);
+  if (u.points != null) meta.push(`${u.points} pts`);
+  if (u.keywords.length) meta.push(u.keywords.join(', '));
+  parts.push(`#unitband(${ts(u.name)}, ${ts(meta.join('  ·  '))})`);
 
   // Distinct stat lines (sergeant + body) if they differ.
   if (u.stats.length > 1) {
@@ -119,24 +120,24 @@ function unitDetail(u) {
       const inv = statVal(c, 'InSv') ? ` Inv${c.InSv}` : '';
       return `${s.name}: M${c.M} T${c.T} Sv${c.Sv} W${c.W} Ld${c.LD} OC${c.OC}${inv}`;
     });
-    out += `#text(size: 6.8pt, fill: luma(90))[${ts(lines.join('    |    '))}]\n\n`;
+    parts.push(`#text(size: 6.8pt, fill: luma(90))[${ts(lines.join('    |    '))}]`);
   }
 
   const wt = weaponTable(u);
-  if (wt) out += wt + '\n';
+  if (wt) parts.push(wt.trimEnd());
 
   if (u.abilities.length) {
-    out += `#text(size: 6.9pt)[#text(weight: "bold")[Abilities. ] ${abilitiesInline(u.abilities)}]\n\n`;
+    parts.push(`#text(size: 6.9pt)[#text(weight: "bold")[Abilities. ] ${abilitiesInline(u.abilities)}]`);
   }
-
   if (u.enhancement) {
-    out += `#text(size: 6.9pt, fill: accent)[#text(weight: "bold")[Enhancement — ${ts(u.enhancement.name)} (${u.enhancement.points} pts). ] ${ts(u.enhancement.text)}]\n\n`;
+    parts.push(`#text(size: 6.9pt, fill: accent)[#text(weight: "bold")[Enhancement — ${ts(u.enhancement.name)} (${u.enhancement.points} pts). ] ${ts(u.enhancement.text)}]`);
   }
   if (u.enhancementMissing) {
-    out += `#text(size: 6.9pt, fill: red)[Enhancement not found: ${ts(u.enhancementMissing)}]\n\n`;
+    parts.push(`#text(size: 6.9pt, fill: red)[Enhancement not found: ${ts(u.enhancementMissing)}]`);
   }
-  out += `#v(3pt)\n`;
-  return out;
+
+  // Keep each datasheet whole: never split a unit across a page boundary.
+  return `#block(breakable: false, width: 100%)[\n${parts.join('\n\n')}\n]\n#v(3pt)\n\n`;
 }
 
 // Render an abilities list with bold names inline.

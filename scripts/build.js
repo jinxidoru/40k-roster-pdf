@@ -39,8 +39,17 @@ console.log(`Wrote ${typPath}`);
 // Report resolution results.
 console.log(`\nResolved ${army.units.length} unit(s):`);
 for (const u of army.units) {
-  const w = u.ranged.length + u.melee.length;
-  console.log(`  ✓ ${u.name}${u.models > 1 ? ` (x${u.models})` : ''} — ${w} weapon(s), ${u.abilities.length} ability(ies)${u.enhancement ? `, +${u.enhancement.name}` : ''}`);
+  const weapons = [...u.ranged, ...u.melee].map((w) => w.name).join(', ') || '(none)';
+  const enh = u.enhancement ? `, +${u.enhancement.name}` : '';
+  console.log(`  ✓ ${u.name}${u.models > 1 ? ` (x${u.models})` : ''}${enh}`);
+  console.log(`      weapons: ${weapons}`);
+}
+if (army.enhancementPool && army.enhancementPool.length) {
+  console.log(`\nEnhancements available in "${army.meta.detachment}" (assign with "enhancement": "<name>" on a unit):`);
+  for (const e of army.enhancementPool) {
+    const used = army.enhancements.some((u) => u.name === e.name) ? ' [selected]' : '';
+    console.log(`  • ${e.name} (${e.points} pts)${used}`);
+  }
 }
 if (army.warnings.length) {
   console.log(`\n⚠ ${army.warnings.length} warning(s):`);

@@ -2,7 +2,7 @@
 // typst.js reads this file and prepends it to the generated document, so the
 // output .typ is self-contained. Edit here to restyle every sheet.
 
-#set page(paper: "a4", margin: (x: 9mm, y: 8mm))
+#set page(paper: "us-letter", margin: (x: 9mm, y: 8mm))
 #set text(font: ("Helvetica Neue", "Arial"), size: 7.6pt)
 #set par(leading: 0.42em)
 
