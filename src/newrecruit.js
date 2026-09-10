@@ -173,6 +173,33 @@ function factionFromCatalogue(name) {
   return parts.length ? parts[parts.length - 1] : name || '';
 }
 
+// Merge units that are identical in every respect (datasheet, model count,
+// loadout, abilities, enhancement) into one entry carrying a `count`.
+function coalesceUnits(units) {
+  const out = [];
+  const byKey = new Map();
+  for (const u of units) {
+    const key = JSON.stringify({
+      name: u.name,
+      models: u.models,
+      ranged: u.ranged,
+      melee: u.melee,
+      stats: u.stats,
+      abilities: u.abilities,
+      enhancement: u.enhancement ? u.enhancement.name : null,
+    });
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      u.count = 1;
+      byKey.set(key, u);
+      out.push(u);
+    }
+  }
+  return out;
+}
+
 export function isNewRecruitRoster(json) {
   return !!(json && json.roster && Array.isArray(json.roster.forces));
 }
@@ -197,10 +224,13 @@ export function parseNewRecruit(path) {
     }
   }
 
+  // Collapse identical units (same datasheet + loadout) into one with a count.
+  const coalesced = coalesceUnits(units);
+
   // Attach army-wide + detachment rules to the first unit so the renderer's
   // shared rules section (which de-dupes across units) lists them once.
   const armyRules = collectArmyRules(forces);
-  if (units.length && armyRules.length) units[0].rules = armyRules;
+  if (coalesced.length && armyRules.length) coalesced[0].rules = armyRules;
 
   const totalCost = (roster.costs || []).find((c) => c.name === 'pts');
   const points = totalCost
@@ -218,7 +248,7 @@ export function parseNewRecruit(path) {
       battleSize,
       points,
     },
-    units,
+    units: coalesced,
     enhancements: usedEnhancements,
     enhancementPool: [],
     stratagems: [],

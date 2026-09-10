@@ -44,7 +44,9 @@ console.log(`${army.units.length} unit(s):`);
 for (const u of army.units) {
   const weapons = [...u.ranged, ...u.melee].map((w) => w.name).join(', ') || '(none)';
   const enh = u.enhancement ? `, +${u.enhancement.name}` : '';
-  console.log(`  ✓ ${u.name}${u.models > 1 ? ` (x${u.models})` : ''}${enh}`);
+  const mult = u.count > 1 ? ` ×${u.count}` : '';
+  const models = u.models > 1 ? ` [${u.models} models]` : '';
+  console.log(`  ✓ ${u.name}${mult}${models}${enh}`);
   console.log(`      weapons: ${weapons}`);
 }
 if (army.warnings.length) {

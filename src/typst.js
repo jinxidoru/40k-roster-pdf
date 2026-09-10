@@ -58,10 +58,17 @@ function clean(s) {
     .trim();
 }
 
-// Typst string literal.
-function ts(s) {
-  return '"' + clean(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+// Some catalogues (e.g. Orks) author weapon keywords in ALL CAPS. De-shout any
+// fully-uppercase word (2+ letters) to Title Case; leave already-cased words and
+// tokens like "D6" or single letters untouched, so title-cased data is unchanged.
+function deShout(s) {
+  return String(s ?? '').replace(/[A-Za-z]+/g, (w) =>
+    /^[A-Z]{2,}$/.test(w) ? w[0] + w.slice(1).toLowerCase() : w,
+  );
 }
+
+// Typst string literal.
+function ts(s) {  return '"' + clean(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';}
 
 const dash = '[—]';
 
@@ -83,7 +90,8 @@ function rosterTable(units) {
   for (const u of units) {
     const s = primaryStat(u);
     const c = s ? s.chars : {};
-    const label = u.models > 1 ? `${u.name} (${u.models})` : u.name;
+    const label0 = u.models > 1 ? `${u.name} (${u.models})` : u.name;
+    const label = u.count > 1 ? `${label0} ×${u.count}` : label0;
     const cells = [
       ts(label),
       ts(statVal(c, 'M') || '—'),
@@ -120,7 +128,7 @@ function weaponTable(u) {
   const rows = all.map((w) => {
     const c = w.chars;
     const skill = c.BS || c.WS || '—';
-    const kw = clean(c.Keywords || '');
+    const kw = deShout(clean(c.Keywords || ''));
     const range = c.Range && c.Range !== 'Melee' ? c.Range : '—';
     return [
       `[${w.kind}]`,
@@ -153,7 +161,8 @@ function unitDetail(u) {
   if (u.models > 1) meta.push(`${u.models} models`);
   if (u.points != null) meta.push(`${u.points} pts`);
   if (u.keywords.length) meta.push(u.keywords.join(', '));
-  parts.push(`#unitband(${ts(u.name)}, ${ts(meta.join('  ·  '))})`);
+  const title = u.count > 1 ? `${u.name} ×${u.count}` : u.name;
+  parts.push(`#unitband(${ts(title)}, ${ts(meta.join('  ·  '))})`);
 
   // Distinct stat lines (sergeant + body) if they differ.
   if (u.stats.length > 1) {
