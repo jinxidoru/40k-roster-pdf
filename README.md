@@ -33,6 +33,25 @@ node scripts/build.js armies/imperial-fists.json --typ-only   # skip PDF compile
 The build prints a per-unit resolution report and warns about any unit name it
 couldn't match (with "did you mean" suggestions) or enhancement it couldn't find.
 
+## Two input formats
+
+The build auto-detects which kind of JSON you pass:
+
+1. **Native army JSON** (`armies/*.json`) — you hand-pick units and loadouts; the
+   tool resolves datasheets from the local `data/` catalogue. See below.
+2. **New Recruit / BattleScribe roster export** — the `.json` you export from
+   [newrecruit.eu](https://newrecruit.eu) (any app using the BattleScribe
+   *rosterSchema*). These are already fully resolved, so the tool reads the exact
+   units, loadouts, abilities, and per-unit points straight from the file — no
+   catalogue lookup, works for any faction:
+
+   ```sh
+   node scripts/build.js Fishies.json      # -> build/Fishies.pdf
+   ```
+
+   Note: roster exports don't include detachment-rule or stratagem text, so those
+   sections are omitted (the army rule, e.g. Oath of Moment, is included).
+
 ## Defining an army
 
 See [`armies/schema.md`](armies/schema.md) for the full format. Minimal example:
