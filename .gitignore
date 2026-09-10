@@ -1,6 +1,3 @@
-# Data (cloned upstream, large, refreshable via git pull)
-data/
-
 # Generated output
 build/
 

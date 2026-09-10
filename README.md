@@ -1,101 +1,58 @@
-# mk40k — 40k quick-reference sheet generator
+# mk40k — 40k quick-reference sheets from New Recruit
 
-Turn a hand-written **army JSON** into a printable **PDF quick-reference sheet** for
-Warhammer 40,000 (11th edition). Stats, weapons, abilities, keywords, points,
-enhancements, and army/detachment rules are pulled automatically from the
-community [`BSData/wh40k-11e`](https://github.com/BSData/wh40k-11e) dataset;
-stratagems are supplied by hand (the dataset doesn't include them).
+Render a printable **PDF quick-reference sheet** for a Warhammer 40,000 army from
+a roster you export in [New Recruit](https://newrecruit.eu) (or any app that
+produces BattleScribe `rosterSchema` JSON). The export is already fully resolved,
+so the sheet shows the exact units, loadouts, abilities, and points you picked —
+for any faction, with no extra data to download.
 
 ![example](docs/example.png)
 
 ## Setup
 
 ```sh
-# 1. Data (git-ignored; ~50 MB). Re-run `git pull` in it to refresh.
-git clone --depth 1 https://github.com/BSData/wh40k-11e.git data/wh40k-11e
-
-# 2. Typst (the PDF engine)
-brew install typst          # macOS; see typst.app for other platforms
-
+brew install typst      # the PDF engine; macOS. See typst.app for other platforms.
 # Node 18+ is required. No npm dependencies.
 ```
 
 ## Usage
 
+1. In New Recruit, export your list as **BattleScribe / JSON**.
+2. Run:
+
 ```sh
-node scripts/build.js armies/imperial-fists.json
-# -> build/imperial-fists.typ   (intermediate, editable)
-# -> build/imperial-fists.pdf   (print this)
-
-node scripts/build.js armies/imperial-fists.json --typ-only   # skip PDF compile
+node scripts/build.js Fishies.json
+# -> build/Fishies.typ   (intermediate, editable Typst source)
+# -> build/Fishies.pdf   (opens automatically)
 ```
 
-The build prints a per-unit resolution report and warns about any unit name it
-couldn't match (with "did you mean" suggestions) or enhancement it couldn't find.
+Flags:
 
-## Two input formats
+- `--typ-only` — write the `.typ` but don't compile the PDF.
+- `--no-open` — compile the PDF but don't open it.
 
-The build auto-detects which kind of JSON you pass:
+The build prints a summary: army name, faction, detachment, points, and each
+unit with its loadout.
 
-1. **Native army JSON** (`armies/*.json`) — you hand-pick units and loadouts; the
-   tool resolves datasheets from the local `data/` catalogue. See below.
-2. **New Recruit / BattleScribe roster export** — the `.json` you export from
-   [newrecruit.eu](https://newrecruit.eu) (any app using the BattleScribe
-   *rosterSchema*). These are already fully resolved, so the tool reads the exact
-   units, loadouts, abilities, and per-unit points straight from the file — no
-   catalogue lookup, works for any faction:
+## What's on the sheet
 
-   ```sh
-   node scripts/build.js Fishies.json      # -> build/Fishies.pdf
-   ```
+- **Roster table** — every unit in one row: M / T / Sv / Inv / W / Ld / OC / Pts.
+- **Datasheets** — per unit: weapon tables (Rng / A / BS-WS / S / AP / D + keywords),
+  abilities, keywords, and any enhancement.
+- **Army rule** (e.g. Oath of Moment).
 
-   Note: roster exports don't include detachment-rule or stratagem text, so those
-   sections are omitted (the army rule, e.g. Oath of Moment, is included).
-
-## Defining an army
-
-See [`armies/schema.md`](armies/schema.md) for the full format. Minimal example:
-
-```json
-{
-  "name": "Imperial Fists Strike Force",
-  "faction": "Imperial Fists",
-  "detachment": "Gladius Task Force",
-  "points": 2000,
-  "units": [
-    { "sheet": "Intercessor Squad", "models": 10 },
-    { "sheet": "Captain", "enhancement": "The Honour Vehement" }
-  ],
-  "stratagems": [
-    { "name": "Fury of the First", "cp": 2, "phase": "Fight phase", "text": "..." }
-  ]
-}
-```
-
-`sheet` is matched case-insensitively against datasheet names in the dataset. If
-a name is wrong the build lists close matches. Units live across catalogues
-(e.g. Imperial Fists share most units with the base Space Marines catalogue);
-linked catalogues are loaded automatically.
+Roster exports don't include detachment-rule or stratagem text, so those are not
+shown (the detachment name still appears in the header).
 
 ## How it works
 
 | File | Role |
 |------|------|
-| `src/catalogue.js` | Loads the named catalogue(s) + everything they link to; indexes every node by id and unit by name. |
-| `src/resolve.js`   | Resolves one unit entry into a datasheet (stats, weapons, abilities, keywords, points). Weapons follow the full wargear tree; abilities/stats stay scoped to the unit's own composition to avoid pulling in unrelated data. |
-| `src/army.js`      | Loads the army JSON, matches unit names, attaches enhancements and rules. |
-| `src/typst.js`     | Emits a self-contained Typst document. |
-| `templates/helpers.typ` | Page/style setup — edit to restyle every sheet. |
-| `scripts/build.js` | CLI entry point. |
-
-## Known limitations
-
-- **Stratagems** are not in the dataset — add them manually in the army JSON.
-- **Points** come from the catalogue's base unit cost; verify against the current
-  Munitorum Field Manual for tournament-accurate totals.
-- Weapon lists show **all** options on a datasheet, not a specific loadout.
+| `src/newrecruit.js` | Parses the roster export into a clean per-unit data model (stats, weapons, abilities, points) read straight from the file. |
+| `src/typst.js` | Emits a self-contained Typst document. |
+| `templates/helpers.typ` | Page/style setup — edit to restyle every sheet (US Letter, fonts, colors). |
+| `scripts/build.js` | CLI: parse → render → compile → open. |
 
 ## License
 
-MIT (tool code). Game data is © Games Workshop and maintained by the BSData
-community under their own terms.
+MIT (tool code). Game data is © Games Workshop.

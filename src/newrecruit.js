@@ -187,7 +187,7 @@ export function parseNewRecruit(path) {
   if (detachment) {
     warnings.push(
       `Detachment "${detachment}" set. Detachment rules and stratagems are not ` +
-      `included in New Recruit exports — add stratagems manually if you want them.`,
+      `included in roster exports, so those sections are omitted.`,
     );
   }
 
