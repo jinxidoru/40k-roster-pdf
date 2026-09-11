@@ -67,6 +67,23 @@ function deShout(s) {
   );
 }
 
+// Format a weapon's Keywords string: de-shout casing, and turn the data's
+// conditional shorthand "Lethal Hits: non-Monster/Vehicle" into the clearer
+// "Lethal Hits (vs non-Monster/Vehicle)".
+function formatKeywords(raw) {
+  const s = deShout(clean(raw));
+  if (!s) return s;
+  return s
+    .split(',')
+    .map((part) => {
+      const t = part.trim();
+      const i = t.indexOf(':');
+      if (i === -1) return t;
+      return `${t.slice(0, i).trim()} (vs ${t.slice(i + 1).trim()})`;
+    })
+    .join(', ');
+}
+
 // Typst string literal.
 function ts(s) {  return '"' + clean(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';}
 
@@ -128,7 +145,7 @@ function weaponTable(u) {
   const rows = all.map((w) => {
     const c = w.chars;
     const skill = c.BS || c.WS || '—';
-    const kw = deShout(clean(c.Keywords || ''));
+    const kw = formatKeywords(c.Keywords || '');
     const range = c.Range && c.Range !== 'Melee' ? c.Range : '—';
     return [
       `[${w.kind}]`,
