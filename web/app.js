@@ -4,7 +4,8 @@
 // jsDelivr's /+esm build rewrites the snippet's internal *bare* dynamic imports
 // (…/contrib/global-compiler, etc.) to resolvable CDN URLs, which a plain
 // no-bundler browser can't do with the raw .mjs.
-import { $typst, TypstSnippet } from 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/contrib/snippet/+esm';
+import { $typst } from 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/contrib/snippet/+esm';
+import { preloadRemoteFonts } from 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/options.init/+esm';
 import { parseRoster, isNewRecruitRoster } from '../src/parse.js';
 import { renderers, byId, defaultRenderer } from '../src/render.js';
 
@@ -109,7 +110,7 @@ els.generate.addEventListener('click', generate);
 function initTypst() {
   if (typstReady) return typstReady;
   $typst.setCompilerInitOptions({
-    beforeBuild: FONTS.map((u) => TypstSnippet.preloadFontFromUrl(u)),
+    beforeBuild: [preloadRemoteFonts(FONTS)],
     getModule: () => WASM.compiler,
   });
   $typst.setRendererInitOptions({ getModule: () => WASM.renderer });
