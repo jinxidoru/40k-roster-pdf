@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>40k Roster PDF</title>
+  <meta name="description" content="Turn a New Recruit roster export into a printable Warhammer 40,000 quick-reference PDF, entirely in your browser." />
+  <link rel="stylesheet" href="web/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>40k Roster PDF</h1>
+    <p>Drop a <a href="https://newrecruit.eu" target="_blank" rel="noopener">New Recruit</a> roster export and get a printable quick-reference PDF — generated entirely in your browser.</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <div id="drop" class="drop">
+        <input id="file" type="file" accept="application/json,.json" hidden />
+        <p><strong>Drop your roster .json here</strong> or <button id="pick" type="button" class="link">choose a file</button>.</p>
+        <p class="hint">In New Recruit: <em>Export → BattleScribe / JSON</em>. Nothing is uploaded — it stays on your device.</p>
+      </div>
+
+      <div class="row">
+        <label for="renderer">Style</label>
+        <select id="renderer"></select>
+        <div id="options"></div>
+        <button id="generate" type="button" disabled>Generate PDF</button>
+      </div>
+
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section class="preview">
+      <div class="preview-head">
+        <span id="summary"></span>
+        <a id="download" class="download" hidden download>Download PDF</a>
+      </div>
+      <iframe id="viewer" title="PDF preview"></iframe>
+    </section>
+  </main>
+
+  <footer>
+    <p>Works with any BattleScribe <code>rosterSchema</code> export. Not affiliated with Games Workshop or New Recruit.
+    <a href="https://github.com/jinxidoru/40k-roster-pdf" target="_blank" rel="noopener">Source</a>.</p>
+  </footer>
+
+  <script type="module" src="web/app.js"></script>
+</body>
+</html>

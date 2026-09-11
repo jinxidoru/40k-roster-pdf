@@ -7,3 +7,6 @@ npm-debug.log*
 
 # OS
 .DS_Store
+
+# Local scratch rosters for testing (not tracked)
+staging/

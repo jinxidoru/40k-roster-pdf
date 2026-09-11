@@ -1,13 +1,10 @@
-// Parse a New Recruit / BattleScribe *roster* export (rosterSchema) into the
-// same army shape that army.js produces, so the existing Typst renderer can
-// consume it unchanged.
+// Parse a New Recruit / BattleScribe *roster* export (rosterSchema) into a
+// clean army model the renderers consume. Pure JS (browser-safe): takes the
+// already-parsed JSON object, does no I/O.
 //
-// Unlike a catalogue, a roster is already resolved: every chosen unit embeds
-// its Unit/weapon/ability profiles and its exact wargear. We therefore read
-// datasheets straight out of the roster (no catalogue lookup needed), which
-// gives the precise loadout the player picked and real per-unit points.
-
-import { readFileSync } from 'node:fs';
+// A roster is already resolved: every chosen unit embeds its Unit/weapon/ability
+// profiles and its exact wargear, so we read datasheets straight out of it — the
+// precise loadout the player picked, with real per-unit points.
 
 // Selections that describe list configuration rather than a unit on the table.
 const CONFIG_CATEGORIES = new Set(['Configuration']);
@@ -43,7 +40,7 @@ function unitPoints(sel) {
   return pts ? Number(pts.value) : null;
 }
 
-// Build one datasheet object (matching resolve.js output) from a unit selection.
+// Build one datasheet object from a unit selection.
 function buildDatasheet(sel) {
   const stats = [];
   const ranged = [];
@@ -204,8 +201,8 @@ export function isNewRecruitRoster(json) {
   return !!(json && json.roster && Array.isArray(json.roster.forces));
 }
 
-export function parseNewRecruit(path) {
-  const json = JSON.parse(readFileSync(path, 'utf8'));
+// Parse an already-JSON-decoded roster export into the army model.
+export function parseRoster(json) {
   const roster = json.roster;
   const forces = roster.forces || [];
   const warnings = [];

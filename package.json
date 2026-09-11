@@ -1,13 +1,10 @@
 {
-  "name": "mk40k",
-  "version": "0.1.0",
-  "description": "Render printable quick-reference PDF sheets from New Recruit (BattleScribe) 40k roster exports.",
+  "name": "40k-roster-pdf",
+  "version": "0.2.0",
+  "description": "Render printable quick-reference PDF sheets from New Recruit (BattleScribe) 40k roster exports. Static web app + CLI.",
   "type": "module",
   "bin": {
-    "mk40k": "scripts/build.js"
-  },
-  "scripts": {
-    "build": "node scripts/build.js Fishies.json"
+    "40k-roster-pdf": "scripts/build.js"
   },
   "license": "MIT"
 }

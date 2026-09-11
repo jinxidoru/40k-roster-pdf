@@ -1,33 +1,62 @@
 #!/usr/bin/env node
-// Build a printable quick-reference PDF from a New Recruit / BattleScribe
-// roster export (newrecruit.eu / rosterSchema).
+// Build a printable quick-reference PDF from a New Recruit / BattleScribe roster
+// export (newrecruit.eu / rosterSchema).
 //
-//   node scripts/build.js Fishies.json [--typ-only] [--no-open]
+//   node scripts/build.js <roster.json> [--renderer id] [--set k=v] [--typ-only] [--no-open]
 //
 // Writes build/<name>.typ and, unless --typ-only, compiles it to
-// build/<name>.pdf with `typst` and opens it.
+// build/<name>.pdf with `typst` (using the bundled font) and opens it.
 
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync, spawn } from 'node:child_process';
-import { parseNewRecruit } from '../src/newrecruit.js';
-import { renderTypst } from '../src/typst.js';
+import { parseRoster, isNewRecruitRoster } from '../src/parse.js';
+import { byId, defaultRenderer, renderers } from '../src/render.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
+const FONT_DIR = join(ROOT, 'assets', 'fonts');
 
 const args = process.argv.slice(2);
 const typOnly = args.includes('--typ-only');
 const noOpen = args.includes('--no-open');
-const input = args.find((a) => !a.startsWith('--'));
+
+// --renderer <id> and repeated --set key=value.
+const options = {};
+let rendererId = defaultRenderer.id;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--renderer') rendererId = args[++i];
+  else if (args[i] === '--set') {
+    const [k, ...rest] = String(args[++i] || '').split('=');
+    if (k) options[k] = rest.join('=');
+  }
+}
+const input = args.find((a) => !a.startsWith('--') && a !== rendererId && !isOptionValue(a));
+
+function isOptionValue(a) {
+  const idx = args.indexOf(a);
+  return idx > 0 && (args[idx - 1] === '--renderer' || args[idx - 1] === '--set');
+}
 
 if (!input) {
-  console.error('Usage: node scripts/build.js <newrecruit-export.json> [--typ-only] [--no-open]');
+  console.error('Usage: node scripts/build.js <roster.json> [--renderer id] [--set k=v] [--typ-only] [--no-open]');
+  console.error(`Renderers: ${renderers.map((r) => r.id).join(', ')}`);
   process.exit(1);
 }
 
-const army = parseNewRecruit(input);
+const renderer = byId[rendererId];
+if (!renderer) {
+  console.error(`Unknown renderer "${rendererId}". Available: ${renderers.map((r) => r.id).join(', ')}`);
+  process.exit(1);
+}
+
+const raw = JSON.parse(readFileSync(input, 'utf8'));
+if (!isNewRecruitRoster(raw)) {
+  console.error(`${input} does not look like a New Recruit / BattleScribe roster export (no top-level "roster").`);
+  process.exit(1);
+}
+const army = parseRoster(raw);
 
 const outDir = join(ROOT, 'build');
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
@@ -35,17 +64,16 @@ const stem = basename(input).replace(/\.json$/i, '');
 const typPath = join(outDir, `${stem}.typ`);
 const pdfPath = join(outDir, `${stem}.pdf`);
 
-writeFileSync(typPath, renderTypst(army), 'utf8');
-console.log(`Wrote ${typPath}`);
+writeFileSync(typPath, renderer.render(army, options), 'utf8');
+console.log(`Wrote ${typPath}  (renderer: ${renderer.id})`);
 
-// Report what was read from the roster.
 console.log(`\n${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts`);
 console.log(`${army.units.length} unit(s):`);
 for (const u of army.units) {
   const weapons = [...u.ranged, ...u.melee].map((w) => w.name).join(', ') || '(none)';
-  const enh = u.enhancement ? `, +${u.enhancement.name}` : '';
   const mult = u.count > 1 ? ` ×${u.count}` : '';
   const models = u.models > 1 ? ` [${u.models} models]` : '';
+  const enh = u.enhancement ? `, +${u.enhancement.name}` : '';
   console.log(`  ✓ ${u.name}${mult}${models}${enh}`);
   console.log(`      weapons: ${weapons}`);
 }
@@ -56,7 +84,7 @@ if (army.warnings.length) {
 
 if (typOnly) process.exit(0);
 
-const res = spawnSync('typst', ['compile', typPath, pdfPath], { stdio: 'inherit' });
+const res = spawnSync('typst', ['compile', '--font-path', FONT_DIR, typPath, pdfPath], { stdio: 'inherit' });
 if (res.error) {
   console.error(`\nCould not run "typst" (${res.error.code}). Install it (brew install typst) or re-run with --typ-only.`);
   process.exit(1);
@@ -66,7 +94,6 @@ console.log(`\nWrote ${pdfPath}`);
 
 if (!noOpen) openFile(pdfPath);
 
-// Open a file with the OS default application.
 function openFile(path) {
   const cmd =
     process.platform === 'darwin' ? 'open' :
