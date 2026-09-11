@@ -27,6 +27,16 @@ jobs:
           mkdir -p _site
           cp index.html _site/
           cp -r web src assets _site/
+      - name: Cache-bust asset URLs
+        run: |
+          VER="${GITHUB_SHA::8}"
+          # Stamp every local JS module import + the worker URL + the entry
+          # script/stylesheet with ?v=<sha> so a deploy's assets always load as a
+          # consistent set (no stale index.html + fresh app.js mismatches).
+          find _site -name '*.js' -print0 | xargs -0 perl -pi -e "s{from '(\.\.?/[^']+\.js)'}{from '\$1?v=$VER'}g"
+          find _site -name '*.js' -print0 | xargs -0 perl -pi -e "s{new URL\('\./worker\.js'}{new URL('./worker.js?v=$VER'}g"
+          perl -pi -e "s{(src=\"web/app\.js)\"}{\$1?v=$VER\"}g; s{(href=\"web/style\.css)\"}{\$1?v=$VER\"}g" _site/index.html
+          echo "Stamped assets with v=$VER"
       - uses: actions/configure-pages@v5
         with:
           enablement: true
