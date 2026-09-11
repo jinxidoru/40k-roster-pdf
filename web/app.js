@@ -1,7 +1,10 @@
 // Web UI: New Recruit roster JSON -> Typst -> PDF, entirely client-side.
 // Reuses the same pure modules as the CLI; Typst compiles via typst.ts (WASM).
 
-import { $typst, TypstSnippet } from 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/dist/esm/contrib/snippet.mjs';
+// jsDelivr's /+esm build rewrites the snippet's internal *bare* dynamic imports
+// (…/contrib/global-compiler, etc.) to resolvable CDN URLs, which a plain
+// no-bundler browser can't do with the raw .mjs.
+import { $typst, TypstSnippet } from 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/contrib/snippet/+esm';
 import { parseRoster, isNewRecruitRoster } from '../src/parse.js';
 import { renderers, byId, defaultRenderer } from '../src/render.js';
 
