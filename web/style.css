@@ -7,6 +7,8 @@
   --line: #e2e2e5;
 }
 * { box-sizing: border-box; }
+/* Must win over `.loading { display:flex }` / `#app { display:grid }`. */
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -55,6 +57,17 @@ main { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
+}
+.controls { display: flex; flex-direction: column; }
+
+/* Feedback callout pinned to the bottom of the control panel, centered. */
+.feedback {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 .drop {

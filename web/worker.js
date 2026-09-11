@@ -5,6 +5,12 @@
 let $typst = null;
 let initing = null;
 
+// Surface any uncaught error/rejection to the main thread instead of hanging.
+self.onerror = (msg, src, line, col, err) =>
+  self.postMessage({ type: 'init-error', message: `worker error: ${(err && err.stack) || msg}` });
+self.onunhandledrejection = (e) =>
+  self.postMessage({ type: 'init-error', message: `worker rejection: ${(e.reason && e.reason.stack) || e.reason}` });
+
 async function ensureInit({ modules, fonts, wasm }) {
   if (initing) return initing;
   initing = (async () => {

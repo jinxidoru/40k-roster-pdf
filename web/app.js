@@ -123,6 +123,9 @@ async function loadFile(file) {
     }
     army = parseRoster(json);
     els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
+    // One anonymous event per loaded roster (not per re-render), plus the faction.
+    track('pdf-generated');
+    track(`faction/${slug(army.meta.faction) || 'unknown'}`);
     regenerate();
   } catch (err) {
     setStatus(`Could not read that file: ${err.message}`, true);
@@ -133,11 +136,17 @@ async function loadFile(file) {
 function initEngine() {
   return new Promise((resolve, reject) => {
     worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-    worker.onerror = (e) => reject(new Error(e.message || 'worker failed to load'));
+    worker.onerror = (e) => { console.error('worker.onerror', e); reject(new Error(e.message || 'worker failed to load')); };
+    worker.onmessageerror = (e) => console.error('worker.onmessageerror', e);
+    const watchdog = setTimeout(() => {
+      const p = els.loading.querySelector('p');
+      if (p) p.textContent = 'Still loading… open the console (F12) if this persists.';
+    }, 20000);
     worker.onmessage = (e) => {
       const m = e.data;
-      if (m.type === 'ready') { ready = true; resolve(); return; }
-      if (m.type === 'init-error') { reject(new Error(m.message)); return; }
+      console.debug('worker →', m.type, m.message || '');
+      if (m.type === 'ready') { clearTimeout(watchdog); ready = true; resolve(); return; }
+      if (m.type === 'init-error') { clearTimeout(watchdog); reject(new Error(m.message)); return; }
       if (m.id !== latestId) return; // a newer request superseded this result
       if (m.type === 'result') {
         const blob = new Blob([m.bytes], { type: 'application/pdf' });
@@ -176,6 +185,18 @@ function regenerate() {
 function setStatus(msg, isError = false) {
   els.status.textContent = msg;
   els.status.classList.toggle('error', isError);
+}
+
+// Fire an anonymous GoatCounter event (no-op on localhost, where the script
+// isn't loaded, so local runs are never counted).
+function track(path) {
+  if (window.goatcounter && window.goatcounter.count) {
+    window.goatcounter.count({ path, title: path, event: true });
+  }
+}
+
+function slug(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 // --- boot: build controls (hidden), load engine, then reveal ---------------

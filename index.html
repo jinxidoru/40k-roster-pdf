@@ -35,6 +35,11 @@
         <div id="options" class="options"></div>
 
         <p id="status" class="status" role="status"></p>
+
+        <p class="feedback">
+          Found a bug or have a suggestion?
+          <a href="https://github.com/jinxidoru/40k-roster-pdf/issues" target="_blank" rel="noopener">Submit it on GitHub</a>.
+        </p>
       </section>
 
       <section class="preview">
@@ -48,10 +53,23 @@
   </main>
 
   <footer>
-    <p>Works with any BattleScribe <code>rosterSchema</code> export. Not affiliated with Games Workshop or New Recruit.
-    <a href="https://github.com/jinxidoru/40k-roster-pdf" target="_blank" rel="noopener">Source</a>.</p>
+    <p>Designed by Michael Bailey. Not affiliated with Games Workshop or New Recruit.</p>
   </footer>
 
   <script type="module" src="web/app.js"></script>
+
+  <!-- Anonymous, cookieless usage stats (GoatCounter). Loaded only off-localhost,
+       so local development is never tracked. -->
+  <script>
+    (function () {
+      var h = location.hostname;
+      if (/^(localhost|127\.|0\.0\.0\.0|::1|\[::1\])/.test(h) || h.endsWith('.local') || location.protocol === 'file:') return;
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = '//gc.zgo.at/count.js';
+      s.setAttribute('data-goatcounter', 'https://40k-roster-pdf.goatcounter.com/count');
+      document.head.appendChild(s);
+    })();
+  </script>
 </body>
 </html>
