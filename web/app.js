@@ -1,35 +1,57 @@
 // Web UI: New Recruit roster JSON -> Typst -> PDF, entirely client-side.
-// Reuses the same pure modules as the CLI; Typst compiles via typst.ts (WASM).
+// Local modules (parse/render) are imported statically (fast); the heavy
+// typst.ts engine is imported dynamically behind a loading spinner, and the PDF
+// regenerates automatically on upload or when any option changes.
 
-// jsDelivr's /+esm build rewrites the snippet's internal *bare* dynamic imports
-// (…/contrib/global-compiler, etc.) to resolvable CDN URLs, which a plain
-// no-bundler browser can't do with the raw .mjs.
-import { $typst } from 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/contrib/snippet/+esm';
-import { preloadRemoteFonts } from 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/options.init/+esm';
 import { parseRoster, isNewRecruitRoster } from '../src/parse.js';
 import { renderers, byId, defaultRenderer } from '../src/render.js';
 
 const TYPST_VERSION = '0.7.0';
+const CDN = `https://cdn.jsdelivr.net/npm`;
 const WASM = {
-  compiler: `https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@${TYPST_VERSION}/pkg/typst_ts_web_compiler_bg.wasm`,
-  renderer: `https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer@${TYPST_VERSION}/pkg/typst_ts_renderer_bg.wasm`,
+  compiler: `${CDN}/@myriaddreamin/typst-ts-web-compiler@${TYPST_VERSION}/pkg/typst_ts_web_compiler_bg.wasm`,
+  renderer: `${CDN}/@myriaddreamin/typst-ts-renderer@${TYPST_VERSION}/pkg/typst_ts_renderer_bg.wasm`,
 };
-// Bundled font (Arimo) so the sheet's font resolves the same as the CLI. Paths
-// are relative to the page (index.html at the site root).
-const FONTS = [
-  'Arimo-Regular.ttf', 'Arimo-Bold.ttf', 'Arimo-Italic.ttf', 'Arimo-BoldItalic.ttf',
-].map((f) => new URL(`assets/fonts/${f}`, document.baseURI).href);
+const FONTS = ['Arimo-Regular.ttf', 'Arimo-Bold.ttf', 'Arimo-Italic.ttf', 'Arimo-BoldItalic.ttf']
+  .map((f) => new URL(`assets/fonts/${f}`, document.baseURI).href);
+const LS_KEY = '40k-roster-pdf/settings';
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  drop: $('drop'), file: $('file'), pick: $('pick'), renderer: $('renderer'),
-  options: $('options'), generate: $('generate'), status: $('status'),
+  loading: $('loading'), app: $('app'), drop: $('drop'), file: $('file'), pick: $('pick'),
+  renderer: $('renderer'), options: $('options'), status: $('status'),
   summary: $('summary'), download: $('download'), viewer: $('viewer'),
 };
 
-let army = null;      // parsed roster
-let typstReady = null; // Promise, initialized on first generate
-let lastUrl = null;    // object URL to revoke
+const MODULES = {
+  snippet: `${CDN}/@myriaddreamin/typst.ts@${TYPST_VERSION}/contrib/snippet/+esm`,
+  options: `${CDN}/@myriaddreamin/typst.ts@${TYPST_VERSION}/options.init/+esm`,
+};
+
+let worker = null;
+let ready = false;
+let army = null;
+let lastUrl = null;
+let latestId = 0; // newest render request; older worker results are ignored
+
+// --- persisted settings ----------------------------------------------------
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; }
+}
+function saveSettings() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
+}
+const settings = loadSettings();
+settings.options ||= {};
+
+// First-visit page-size default from the user's region (timezone proxy; no
+// permission prompt): UK/Europe -> A4, otherwise US Letter.
+function defaultPaper() {
+  try {
+    if (/^Europe\//.test(Intl.DateTimeFormat().resolvedOptions().timeZone || '')) return 'a4';
+  } catch { /* ignore */ }
+  return 'us-letter';
+}
 
 // --- renderer picker -------------------------------------------------------
 for (const r of renderers) {
@@ -38,28 +60,40 @@ for (const r of renderers) {
   opt.textContent = r.name;
   els.renderer.appendChild(opt);
 }
-els.renderer.value = defaultRenderer.id;
-els.renderer.addEventListener('change', buildOptions);
-buildOptions();
+els.renderer.value = byId[settings.renderer] ? settings.renderer : defaultRenderer.id;
+els.renderer.addEventListener('change', () => {
+  settings.renderer = els.renderer.value;
+  buildOptions();
+  saveSettings();
+  regenerate();
+});
 
-// --- per-renderer options UI (built from the renderer's options schema) -----
+// --- options UI (from the renderer's schema, values persisted) -------------
 function buildOptions() {
   const r = byId[els.renderer.value] || defaultRenderer;
   els.options.innerHTML = '';
   for (const opt of r.options || []) {
+    let val = settings.options[opt.key];
+    if (val === undefined) val = opt.key === 'paper' ? defaultPaper() : opt.default;
+    settings.options[opt.key] = val;
+
     if (opt.type === 'select') {
       const wrap = document.createElement('label');
       wrap.className = 'opt';
       wrap.append(`${opt.label} `);
       const sel = document.createElement('select');
-      sel.dataset.key = opt.key;
       for (const c of opt.choices) {
         const o = document.createElement('option');
         o.value = c.value;
         o.textContent = c.label;
         sel.appendChild(o);
       }
-      sel.value = opt.default;
+      sel.value = val;
+      sel.addEventListener('change', () => {
+        settings.options[opt.key] = sel.value;
+        saveSettings();
+        regenerate();
+      });
       wrap.appendChild(sel);
       els.options.appendChild(wrap);
     }
@@ -67,16 +101,9 @@ function buildOptions() {
   }
 }
 
-function collectOptions() {
-  const out = {};
-  els.options.querySelectorAll('[data-key]').forEach((el) => { out[el.dataset.key] = el.value; });
-  return out;
-}
-
 // --- file intake -----------------------------------------------------------
 els.pick.addEventListener('click', () => els.file.click());
 els.file.addEventListener('change', () => els.file.files[0] && loadFile(els.file.files[0]));
-
 ['dragover', 'dragenter'].forEach((ev) =>
   els.drop.addEventListener(ev, (e) => { e.preventDefault(); els.drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach((ev) =>
@@ -88,7 +115,6 @@ els.drop.addEventListener('drop', (e) => {
 });
 
 async function loadFile(file) {
-  setStatus(`Reading ${file.name}…`);
   try {
     const json = JSON.parse(await file.text());
     if (!isNewRecruitRoster(json)) {
@@ -97,54 +123,68 @@ async function loadFile(file) {
     }
     army = parseRoster(json);
     els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
-    els.generate.disabled = false;
-    setStatus('Ready. Click “Generate PDF”.');
+    regenerate();
   } catch (err) {
     setStatus(`Could not read that file: ${err.message}`, true);
   }
 }
 
-// --- generate --------------------------------------------------------------
-els.generate.addEventListener('click', generate);
-
-function initTypst() {
-  if (typstReady) return typstReady;
-  $typst.setCompilerInitOptions({
-    beforeBuild: [preloadRemoteFonts(FONTS)],
-    getModule: () => WASM.compiler,
+// --- typst engine (in a worker) + generation --------------------------------
+function initEngine() {
+  return new Promise((resolve, reject) => {
+    worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    worker.onerror = (e) => reject(new Error(e.message || 'worker failed to load'));
+    worker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'ready') { ready = true; resolve(); return; }
+      if (m.type === 'init-error') { reject(new Error(m.message)); return; }
+      if (m.id !== latestId) return; // a newer request superseded this result
+      if (m.type === 'result') {
+        const blob = new Blob([m.bytes], { type: 'application/pdf' });
+        if (lastUrl) URL.revokeObjectURL(lastUrl);
+        lastUrl = URL.createObjectURL(blob);
+        els.viewer.src = lastUrl;
+        els.download.href = lastUrl;
+        els.download.download = `${army.meta.name}.pdf`;
+        els.download.hidden = false;
+        setStatus('');
+      } else if (m.type === 'error') {
+        setStatus(`Failed to generate PDF: ${m.message}`, true);
+      }
+    };
+    worker.postMessage({ type: 'init', modules: MODULES, fonts: FONTS, wasm: WASM });
   });
-  $typst.setRendererInitOptions({ getModule: () => WASM.renderer });
-  typstReady = Promise.resolve();
-  return typstReady;
 }
 
-async function generate() {
-  if (!army) return;
-  els.generate.disabled = true;
-  setStatus('Loading Typst (first run downloads ~a few MB)…');
+// Rendering the Typst source is cheap (main thread); the compile runs in the
+// worker. Each request bumps latestId so an in-flight render is superseded.
+function regenerate() {
+  if (!army || !ready) return;
+  const renderer = byId[els.renderer.value] || defaultRenderer;
+  let mainContent;
   try {
-    await initTypst();
-    const renderer = byId[els.renderer.value] || defaultRenderer;
-    const mainContent = renderer.render(army, collectOptions());
-    setStatus('Rendering PDF…');
-    const data = await $typst.pdf({ mainContent });
-    const blob = new Blob([data], { type: 'application/pdf' });
-    if (lastUrl) URL.revokeObjectURL(lastUrl);
-    lastUrl = URL.createObjectURL(blob);
-    els.viewer.src = lastUrl;
-    els.download.href = lastUrl;
-    els.download.download = `${army.meta.name}.pdf`;
-    els.download.hidden = false;
-    setStatus('Done.');
+    mainContent = renderer.render(army, { ...settings.options });
   } catch (err) {
-    console.error(err);
-    setStatus(`Failed to generate PDF: ${err.message || err}`, true);
-  } finally {
-    els.generate.disabled = false;
+    setStatus(`Render error: ${err.message || err}`, true);
+    return;
   }
+  setStatus('Rendering…');
+  const id = ++latestId;
+  worker.postMessage({ type: 'render', id, mainContent });
 }
 
 function setStatus(msg, isError = false) {
   els.status.textContent = msg;
   els.status.classList.toggle('error', isError);
 }
+
+// --- boot: build controls (hidden), load engine, then reveal ---------------
+buildOptions();
+initEngine()
+  .then(() => {
+    els.loading.hidden = true;
+    els.app.hidden = false;
+  })
+  .catch((err) => {
+    els.loading.innerHTML = `<p class="error">Couldn't load the PDF engine: ${err.message || err}</p>`;
+  });

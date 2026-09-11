@@ -14,30 +14,37 @@
   </header>
 
   <main>
-    <section class="controls">
-      <div id="drop" class="drop">
-        <input id="file" type="file" accept="application/json,.json" hidden />
-        <p><strong>Drop your roster .json here</strong> or <button id="pick" type="button" class="link">choose a file</button>.</p>
-        <p class="hint">In New Recruit: <em>Export → BattleScribe / JSON</em>. Nothing is uploaded — it stays on your device.</p>
-      </div>
+    <div id="loading" class="loading">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading the PDF engine…</p>
+    </div>
 
-      <div class="row">
-        <label for="renderer">Style</label>
-        <select id="renderer"></select>
-        <div id="options"></div>
-        <button id="generate" type="button" disabled>Generate PDF</button>
-      </div>
+    <div id="app" hidden>
+      <section class="controls">
+        <div id="drop" class="drop">
+          <input id="file" type="file" accept="application/json,.json" hidden />
+          <p><strong>Drop your roster .json here</strong> or <button id="pick" type="button" class="link">choose a file</button>.</p>
+          <p class="hint">In New Recruit: <em>Export → BattleScribe / JSON</em>. Nothing is uploaded — it stays on your device.</p>
+        </div>
 
-      <p id="status" class="status" role="status"></p>
-    </section>
+        <div class="row">
+          <label for="renderer">Renderer</label>
+          <select id="renderer"></select>
+        </div>
+        <hr />
+        <div id="options" class="options"></div>
 
-    <section class="preview">
-      <div class="preview-head">
-        <span id="summary"></span>
-        <a id="download" class="download" hidden download>Download PDF</a>
-      </div>
-      <iframe id="viewer" title="PDF preview"></iframe>
-    </section>
+        <p id="status" class="status" role="status"></p>
+      </section>
+
+      <section class="preview">
+        <div class="preview-head">
+          <span id="summary"></span>
+          <a id="download" class="download" hidden download>Download PDF</a>
+        </div>
+        <iframe id="viewer" title="PDF preview"></iframe>
+      </section>
+    </div>
   </main>
 
   <footer>

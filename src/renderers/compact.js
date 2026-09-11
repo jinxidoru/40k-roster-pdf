@@ -17,8 +17,9 @@ function preamble(accent, paper) {
 #let band = luma(238)
 #set table(inset: (x: 4pt, y: 2.2pt), stroke: 0.3pt + luma(200))
 #let hc(body) = table.cell(fill: accent, text(fill: white, weight: "bold", size: 7pt, body))
-// Weapon-kind marker locked into a fixed box so the glyph never changes row height.
-#let ico(g) = box(width: 9pt, height: 0.85em, align(center + horizon, text(size: 8pt, g)))
+// Weapon-kind marker locked into a fixed box so the glyph never changes row
+// height; dy nudges the glyph vertically (crosshair sits a touch high).
+#let ico(g, dy: 0pt) = box(width: 9pt, height: 0.85em, align(center + horizon, move(dy: dy, text(size: 8pt, g))))
 #let sheettitle(name, sub) = {
   block(width: 100%, fill: accent, inset: (x: 6pt, y: 5pt), radius: 2pt)[
     #text(fill: white, weight: "bold", size: 13pt, name)
@@ -37,7 +38,7 @@ function preamble(accent, paper) {
 #let unitband(name, meta) = {
   block(width: 100%, inset: (x: 4pt, y: 2.5pt), fill: luma(248), stroke: (bottom: 0.6pt + accent))[
     #grid(
-      columns: (auto, 1fr), column-gutter: 16pt, align: horizon,
+      columns: (auto, 1fr), column-gutter: 16pt, align: top,
       text(weight: "bold", size: 8.5pt, name),
       align(right, text(size: 7pt, fill: faint, meta)),
     )
@@ -53,10 +54,18 @@ function statCells(chars) {
   return STAT_KEYS.map((k) => ts(statVal(chars, k) || '—'));
 }
 
-// Main profile = the one named like the unit, else the first; others are secondary.
+// The main profile is the bulk trooper, whose name matches the unit (e.g.
+// "Warbiker" for "Warbikers"); leader/variant profiles (e.g. "Biker Nob") are
+// shown as secondary. Match exact, then singular, then name-is-a-prefix, else first.
 function splitProfiles(u) {
   if (!u.stats.length) return { main: null, secondary: [] };
-  const main = u.stats.find((s) => s.name === u.name) || u.stats[0];
+  const nameLc = u.name.toLowerCase();
+  const singular = nameLc.replace(/s$/, '');
+  const main =
+    u.stats.find((s) => s.name.toLowerCase() === nameLc) ||
+    u.stats.find((s) => s.name.toLowerCase() === singular) ||
+    u.stats.find((s) => nameLc.startsWith(s.name.toLowerCase())) ||
+    u.stats[0];
   return { main, secondary: u.stats.filter((s) => s !== main) };
 }
 
@@ -79,11 +88,8 @@ function rosterGroups(units) {
 function rosterTable(units) {
   const groups = rosterGroups(units);
   const rows = [];
-  const shaded = []; // 1-based data-row indices to shade (whole unit shares parity)
-  let row = 1;
-  groups.forEach((g, ui) => {
+  for (const g of groups) {
     const u = g.unit;
-    const shade = ui % 2 === 1;
     const { main, secondary } = splitProfiles(u);
     const chars = main ? main.chars : {};
 
@@ -94,10 +100,9 @@ function rosterTable(units) {
       ...statCells(chars),
       u.points == null ? ts('—') : ts(String(u.points)),
     ].join(', '));
-    if (shade) shaded.push(row);
-    row += 1;
 
-    // Secondary profiles: indented, italic/faint, no points.
+    // Secondary profiles: indented, italic/faint, no points. Each is its own
+    // row and participates in the per-row alternating shading.
     for (const s of secondary) {
       const nameCell = `[#h(1em)#text(fill: luma(110), style: "italic")[${mk(s.name)}]]`;
       rows.push([
@@ -105,19 +110,16 @@ function rosterTable(units) {
         ...STAT_KEYS.map((k) => `[#text(fill: luma(110))[${mk(statVal(s.chars, k) || '—')}]]`),
         ts(''),
       ].join(', '));
-      if (shade) shaded.push(row);
-      row += 1;
     }
-  });
+  }
 
   const cols = ['Unit', 'M', 'T', 'Sv', 'Inv', 'W', 'Ld', 'OC', 'Pts'];
   const header = cols.map((c) => `hc[${c}]`).join(', ');
-  const shadedArr = `(${shaded.join(', ')}${shaded.length === 1 ? ',' : ''})`;
   return (
     `#table(\n` +
     `  columns: (1fr, auto, auto, auto, auto, auto, auto, auto, auto),\n` +
     `  align: (left, center, center, center, center, center, center, center, center),\n` +
-    `  fill: (_, r) => if ${shadedArr}.contains(r) { rgb("#f2f2f2") },\n` +
+    `  fill: (_, r) => if r != 0 and calc.odd(r) { rgb("#f2f2f2") },\n` +
     `  ${header},\n` +
     rows.map((r) => `  ${r},`).join('\n') +
     `\n)\n`
@@ -135,7 +137,7 @@ function weaponTable(u) {
     const skill = c.BS || c.WS || '—';
     const kw = formatKeywords(c.Keywords || '');
     const range = c.Range && c.Range !== 'Melee' ? c.Range : '—';
-    const marker = w.kind === 'R' ? 'ico("⌖")' : 'ico("⚔")';
+    const marker = w.kind === 'R' ? 'ico("⌖", dy: -0.5pt)' : 'ico("⚔")';
     return [
       marker,
       ts(w.name),
@@ -155,6 +157,7 @@ function weaponTable(u) {
     `#table(\n` +
     `  columns: (auto, 1fr, auto, auto, auto, auto, auto, auto, 1.3fr),\n` +
     `  align: (center, left, center, center, center, center, center, center, left),\n` +
+    `  fill: (_, r) => if r != 0 and calc.odd(r) { rgb("#f2f2f2") },\n` +
     `  ${header},\n` +
     rows.map((r) => `  ${r},`).join('\n') +
     `\n)\n`
@@ -182,15 +185,7 @@ function unitDetail(u) {
   const title = u.count > 1 ? `${u.name} ×${u.count}` : u.name;
   parts.push(`#unitband(${ts(title)}, ${ts(meta.join('  ·  '))})`);
 
-  // Distinct stat lines (sergeant + body) if they differ.
-  if (u.stats.length > 1) {
-    const lines = u.stats.map((s) => {
-      const c = s.chars;
-      const inv = statVal(c, 'InSv') ? ` Inv${c.InSv}` : '';
-      return `${s.name}: M${c.M} T${c.T} Sv${c.Sv} W${c.W} Ld${c.LD} OC${c.OC}${inv}`;
-    });
-    parts.push(`#text(size: 6.8pt, fill: luma(90))[${mk(lines.join('    |    '))}]`);
-  }
+  // (Stat profiles — including alternate/secondary — live only in the top table.)
 
   const wt = weaponTable(u);
   if (wt) parts.push(wt.trimEnd());
