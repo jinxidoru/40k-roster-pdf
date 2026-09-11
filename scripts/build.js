@@ -84,7 +84,14 @@ if (army.warnings.length) {
 
 if (typOnly) process.exit(0);
 
-const res = spawnSync('typst', ['compile', '--font-path', FONT_DIR, typPath, pdfPath], { stdio: 'inherit' });
+// --ignore-system-fonts so the CLI uses only the bundled Arimo + Typst's
+// embedded fonts — matching the browser (typst.ts) exactly, so output and glyph
+// coverage (weapon icons, etc.) are identical in both.
+const res = spawnSync(
+  'typst',
+  ['compile', '--font-path', FONT_DIR, '--ignore-system-fonts', typPath, pdfPath],
+  { stdio: 'inherit' },
+);
 if (res.error) {
   console.error(`\nCould not run "typst" (${res.error.code}). Install it (brew install typst) or re-run with --typ-only.`);
   process.exit(1);

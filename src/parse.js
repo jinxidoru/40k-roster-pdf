@@ -9,6 +9,14 @@
 // Selections that describe list configuration rather than a unit on the table.
 const CONFIG_CATEGORIES = new Set(['Configuration']);
 
+// The 10e/11e "Core" abilities (matched as a prefix, since many carry a value
+// like "Scouts 9\"" or "Feel No Pain 5+"). Used to pull core abilities out of a
+// unit's rules while leaving weapon USRs (Devastating Wounds, etc.) behind.
+const CORE_ABILITIES = [
+  'deep strike', 'deadly demise', 'feel no pain', 'fights first', 'firing deck',
+  'hover', 'infiltrators', 'leader', 'lone operative', 'scouts', 'stealth',
+];
+
 function charMap(profile) {
   const m = {};
   for (const c of profile.characteristics || []) m[c.name] = (c.$text ?? '').trim();
@@ -46,6 +54,7 @@ function buildDatasheet(sel) {
   const ranged = [];
   const melee = [];
   const abilities = [];
+  const unitRules = new Set(); // core/faction ability keywords live on the unit as rules
   const seenStat = new Set();
   const seenWeapon = new Set();
   const seenAbility = new Set();
@@ -63,6 +72,11 @@ function buildDatasheet(sel) {
       const text = ability ? (charMap(ability).Description || '') : '';
       enhancement = { name: node.name, points: unitPoints(node), text };
       continue; // don't fold the enhancement's ability into the unit's abilities
+    }
+
+    // Rules on the unit/model (not weapons) are the core/faction ability keywords.
+    if (!weaponNode) {
+      for (const r of node.rules || []) if (r.name) unitRules.add(r.name);
     }
 
     for (const p of node.profiles || []) {
@@ -105,6 +119,9 @@ function buildDatasheet(sel) {
     ranged,
     melee,
     abilities,
+    unitRules: [...unitRules],
+    core: [],
+    faction: [],
     rules: [],
     keywords,
     factions,
@@ -223,6 +240,18 @@ export function parseRoster(json) {
 
   // Collapse identical units (same datasheet + loadout) into one with a count.
   const coalesced = coalesceUnits(units);
+
+  // Classify each unit's rules into Core abilities (a known keyword set) and
+  // Faction abilities (the army's force-level rules, e.g. Oath of Moment).
+  // Everything else (stray weapon USRs that leaked onto the unit) is dropped.
+  const factionNames = new Set();
+  for (const force of forces) for (const r of force.rules || []) if (r.name) factionNames.add(r.name);
+  for (const u of coalesced) {
+    const rules = u.unitRules || [];
+    u.core = rules.filter((n) => CORE_ABILITIES.some((c) => n.toLowerCase().startsWith(c)));
+    u.faction = rules.filter((n) => factionNames.has(n));
+    delete u.unitRules;
+  }
 
   // Attach army-wide + detachment rules to the first unit so the renderer's
   // shared rules section (which de-dupes across units) lists them once.

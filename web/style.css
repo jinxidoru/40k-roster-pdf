@@ -61,6 +61,8 @@ main {
   margin-top: 14px;
 }
 .row label { font-weight: 600; font-size: 13px; }
+#options { display: flex; gap: 10px; align-items: center; }
+.opt { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 select, button {
   font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid #cbd5e1;
   background: #fff;

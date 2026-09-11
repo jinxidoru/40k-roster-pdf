@@ -35,6 +35,39 @@ for (const r of renderers) {
   els.renderer.appendChild(opt);
 }
 els.renderer.value = defaultRenderer.id;
+els.renderer.addEventListener('change', buildOptions);
+buildOptions();
+
+// --- per-renderer options UI (built from the renderer's options schema) -----
+function buildOptions() {
+  const r = byId[els.renderer.value] || defaultRenderer;
+  els.options.innerHTML = '';
+  for (const opt of r.options || []) {
+    if (opt.type === 'select') {
+      const wrap = document.createElement('label');
+      wrap.className = 'opt';
+      wrap.append(`${opt.label} `);
+      const sel = document.createElement('select');
+      sel.dataset.key = opt.key;
+      for (const c of opt.choices) {
+        const o = document.createElement('option');
+        o.value = c.value;
+        o.textContent = c.label;
+        sel.appendChild(o);
+      }
+      sel.value = opt.default;
+      wrap.appendChild(sel);
+      els.options.appendChild(wrap);
+    }
+    // future option types (bool/number/color) get their controls here
+  }
+}
+
+function collectOptions() {
+  const out = {};
+  els.options.querySelectorAll('[data-key]').forEach((el) => { out[el.dataset.key] = el.value; });
+  return out;
+}
 
 // --- file intake -----------------------------------------------------------
 els.pick.addEventListener('click', () => els.file.click());
@@ -88,7 +121,7 @@ async function generate() {
   try {
     await initTypst();
     const renderer = byId[els.renderer.value] || defaultRenderer;
-    const mainContent = renderer.render(army, {});
+    const mainContent = renderer.render(army, collectOptions());
     setStatus('Rendering PDF…');
     const data = await $typst.pdf({ mainContent });
     const blob = new Blob([data], { type: 'application/pdf' });
