@@ -31,8 +31,10 @@
           <label for="renderer">Renderer</label>
           <select id="renderer"></select>
         </div>
-        <hr />
-        <div id="options" class="options"></div>
+        <div id="render-options" hidden>
+          <hr />
+          <div id="options" class="options"></div>
+        </div>
 
         <p id="status" class="status" role="status"></p>
 
@@ -58,7 +60,8 @@
             </a>
           </div>
         </div>
-        <iframe id="viewer" title="PDF preview"></iframe>
+        <div id="viewer" class="viewer" tabindex="0" aria-label="Sheet preview"></div>
+        <iframe id="print-frame" title="Print" aria-hidden="true"></iframe>
       </section>
     </div>
   </main>

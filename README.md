@@ -23,7 +23,7 @@ match the faction.
 Sheets are produced by named *renderers*, each with its own layout (and, later, its own
 options). Today:
 
-- **Compact** — the whole army as dense reference tables on US Letter.
+- **Standard** — the whole army as dense reference tables on US Letter.
 
 More styles (cards, A4, …) can be added without touching the rest.
 
@@ -34,7 +34,7 @@ The same renderers run from a CLI (needs [Typst](https://typst.app) installed �
 
 ```sh
 node scripts/build.js path/to/roster.json            # -> build/<name>.pdf (opens it)
-node scripts/build.js roster.json --renderer compact --typ-only --no-open
+node scripts/build.js roster.json --renderer standard --typ-only --no-open
 ```
 
 ## Notes & limitations

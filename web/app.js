@@ -19,16 +19,45 @@ const LS_KEY = '40k-roster-pdf/settings';
 const $ = (id) => document.getElementById(id);
 const els = {
   loading: $('loading'), app: $('app'), drop: $('drop'), file: $('file'), pick: $('pick'),
-  renderer: $('renderer'), options: $('options'), status: $('status'),
-  summary: $('summary'), print: $('print'), download: $('download'), viewer: $('viewer'),
+  renderer: $('renderer'), renderOptions: $('render-options'), options: $('options'), status: $('status'),
+  summary: $('summary'), print: $('print'), download: $('download'),
+  viewer: $('viewer'), printFrame: $('print-frame'),
 };
 
-// Print the currently-previewed PDF directly. The blob URL is same-origin, so
-// the iframe's built-in PDF viewer can be driven straight to the print dialog.
-els.print.onclick = () => {
-  els.viewer.contentWindow?.focus();
-  els.viewer.contentWindow?.print();
+// Preview is SVG (fast). The PDF is compiled lazily — only when the user
+// actually downloads or prints — so toggling options only pays for the SVG.
+els.print.onclick = async () => {
+  try {
+    const url = await ensurePdf();
+    if (els.printFrame.src === url) {
+      els.printFrame.contentWindow?.focus();
+      els.printFrame.contentWindow?.print();
+    } else {
+      els.printFrame.onload = () => {
+        els.printFrame.onload = null;
+        els.printFrame.contentWindow?.focus();
+        els.printFrame.contentWindow?.print();
+      };
+      els.printFrame.src = url;
+    }
+  } catch (err) {
+    setStatus(`Couldn't build PDF: ${err.message || err}`, true);
+  }
 };
+els.download.addEventListener('click', async (e) => {
+  e.preventDefault();
+  try {
+    const url = await ensurePdf();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${army.meta.name}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (err) {
+    setStatus(`Couldn't build PDF: ${err.message || err}`, true);
+  }
+});
 
 const MODULES = {
   snippet: `${CDN}/@myriaddreamin/typst.ts@${TYPST_VERSION}/contrib/snippet/+esm`,
@@ -38,8 +67,24 @@ const MODULES = {
 let worker = null;
 let ready = false;
 let army = null;
-let lastUrl = null;
 let latestId = 0; // newest render request; older worker results are ignored
+let currentContent = ''; // Typst source of the current preview (for lazy PDF)
+let pdfUrl = null; // cached PDF blob URL for currentContent, or null if stale
+let pdfReqId = 0; // id space for on-demand PDF requests
+const pdfWaiters = new Map(); // pdfReqId -> { resolve, reject }
+
+// Compile (or reuse) the PDF for the currently-previewed sheet, on demand.
+function ensurePdf() {
+  if (pdfUrl) return Promise.resolve(pdfUrl);
+  const id = ++pdfReqId;
+  return new Promise((resolve, reject) => {
+    pdfWaiters.set(id, { resolve, reject });
+    worker.postMessage({ type: 'pdf', id, mainContent: currentContent });
+  }).then((bytes) => {
+    pdfUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    return pdfUrl;
+  });
+}
 
 // --- persisted settings ----------------------------------------------------
 function loadSettings() {
@@ -120,6 +165,12 @@ function buildOptions() {
         o.textContent = c.label;
         sel.appendChild(o);
       }
+      // A persisted value that's no longer a valid choice (e.g. an old boolean
+      // for an option that became a dropdown) falls back to the default.
+      if (!opt.choices.some((c) => c.value === val)) {
+        val = opt.default;
+        settings.options[opt.key] = val;
+      }
       sel.value = val;
       sel.addEventListener('change', () => {
         settings.options[opt.key] = sel.value;
@@ -171,6 +222,7 @@ function loadRoster(json) {
     return;
   }
   army = parseRoster(json);
+  els.renderOptions.hidden = false;
   els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
   // One anonymous event per loaded roster (not per re-render), plus the faction.
   track('pdf-generated');
@@ -213,19 +265,30 @@ function initEngine() {
       console.debug('worker →', m.type, m.message || '');
       if (m.type === 'ready') { clearTimeout(watchdog); ready = true; resolve(); return; }
       if (m.type === 'init-error') { clearTimeout(watchdog); reject(new Error(m.message)); return; }
+      // On-demand PDF replies (own id space; not tied to the latest preview).
+      if (m.type === 'pdf-result') {
+        const w = pdfWaiters.get(m.id);
+        if (w) { pdfWaiters.delete(m.id); w.resolve(m.bytes); }
+        return;
+      }
+      if (m.type === 'pdf-error') {
+        const w = pdfWaiters.get(m.id);
+        if (w) { pdfWaiters.delete(m.id); w.reject(new Error(m.message)); }
+        return;
+      }
       if (m.id !== latestId) return; // a newer request superseded this result
       if (m.type === 'result') {
-        const blob = new Blob([m.bytes], { type: 'application/pdf' });
-        if (lastUrl) URL.revokeObjectURL(lastUrl);
-        lastUrl = URL.createObjectURL(blob);
-        els.viewer.src = lastUrl;
-        els.download.href = lastUrl;
-        els.download.download = `${army.meta.name}.pdf`;
+        // SVG preview — swap content in place, preserving scroll position so
+        // toggling options doesn't jump you back to the top.
+        const y = els.viewer.scrollTop;
+        els.viewer.innerHTML = m.svg;
+        markPageBreaks();
+        els.viewer.scrollTop = y;
         els.download.hidden = false;
         els.print.hidden = false;
         setStatus('');
       } else if (m.type === 'error') {
-        setStatus(`Failed to generate PDF: ${m.message}`, true);
+        setStatus(`Failed to render sheet: ${m.message}`, true);
       }
     };
     worker.postMessage({ type: 'init', modules: MODULES, fonts: FONTS, wasm: WASM });
@@ -244,9 +307,60 @@ function regenerate() {
     setStatus(`Render error: ${err.message || err}`, true);
     return;
   }
+  // New source → any previously compiled PDF is stale.
+  currentContent = mainContent;
+  if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
   const id = ++latestId;
   worker.postMessage({ type: 'render', id, mainContent });
 }
+
+// Paper dimensions in points (Typst's SVG user units), for locating page breaks.
+const PAGE_PT = {
+  'us-letter': [612, 792],
+  a4: [595.28, 841.89],
+  a5: [419.53, 595.28],
+};
+
+// typst.ts returns one combined SVG for the whole document, so page boundaries
+// aren't visually distinct. Overlay a dashed "Page N" separator at each break,
+// positioned from the paper height (purely cosmetic — never touches the render).
+function addSep(topPx, label) {
+  const sep = document.createElement('div');
+  sep.className = 'page-sep';
+  sep.style.top = `${topPx}px`;
+  sep.dataset.label = label;
+  els.viewer.appendChild(sep);
+}
+function markPageBreaks() {
+  els.viewer.querySelectorAll('.page-sep').forEach((e) => e.remove());
+  const svgs = [...els.viewer.querySelectorAll('svg')];
+  const base = els.viewer.getBoundingClientRect().top - els.viewer.scrollTop;
+  if (svgs.length > 1) {
+    // One <svg> per page: a break at the top of each page after the first.
+    for (let i = 1; i < svgs.length; i++) {
+      addSep(svgs[i].getBoundingClientRect().top - base, `Page ${i + 1}`);
+    }
+  } else if (svgs.length === 1) {
+    // One combined <svg>: split the rendered height by the page count, which we
+    // get from the aspect ratio (unit-independent).
+    const svg = svgs[0];
+    const vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    const rect = svg.getBoundingClientRect();
+    const [pw, ph] = PAGE_PT[settings.options.paper] || PAGE_PT['us-letter'];
+    const pages = vb.length === 4 && vb[2]
+      ? Math.max(1, Math.round((vb[3] / vb[2]) / (ph / pw)))
+      : 1;
+    for (let i = 1; i < pages; i++) {
+      addSep(rect.top - base + (i * rect.height) / pages, `Page ${i + 1}`);
+    }
+  }
+}
+// Reposition markers when the preview width changes (scale depends on it).
+let pageBreakTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(pageBreakTimer);
+  pageBreakTimer = setTimeout(markPageBreaks, 150);
+});
 
 function setStatus(msg, isError = false) {
   els.status.textContent = msg;

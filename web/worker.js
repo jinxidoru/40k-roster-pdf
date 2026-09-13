@@ -41,11 +41,20 @@ self.onmessage = async (e) => {
     }
   } else if (m.type === 'render') {
     try {
-      const data = await $typst.pdf({ mainContent: m.mainContent });
-      const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-      self.postMessage({ type: 'result', id: m.id, bytes }, [bytes.buffer]);
+      // SVG drives the scrollable on-screen preview (fast; every option change).
+      const svg = await $typst.svg({ mainContent: m.mainContent });
+      self.postMessage({ type: 'result', id: m.id, svg });
     } catch (err) {
       self.postMessage({ type: 'error', id: m.id, message: String((err && err.message) || err) });
+    }
+  } else if (m.type === 'pdf') {
+    try {
+      // PDF compiled on demand for Download / Print only.
+      const data = await $typst.pdf({ mainContent: m.mainContent });
+      const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+      self.postMessage({ type: 'pdf-result', id: m.id, bytes }, [bytes.buffer]);
+    } catch (err) {
+      self.postMessage({ type: 'pdf-error', id: m.id, message: String((err && err.message) || err) });
     }
   }
 };

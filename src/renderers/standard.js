@@ -1,4 +1,4 @@
-// "Compact" renderer — a dense whole-army quick-reference on US Letter.
+// "Standard" renderer — a dense whole-army quick-reference on US Letter.
 // render(army, options) -> Typst source string. Pure/browser-safe.
 
 import {
@@ -235,6 +235,14 @@ function bool(v, def) {
   return v === true || v === 'true';
 }
 
+// Keyword-glossary mode: 'none' | 'show' | 'separate'. Accepts a legacy boolean
+// (true -> 'show') so older persisted/CLI values still work.
+function glossaryMode(v) {
+  if (v === 'show' || v === 'separate') return v;
+  if (v === true || v === 'true') return 'show';
+  return 'none';
+}
+
 // Reduce a keyword token to a base name for matching against glossary keys:
 // drop conditional (":…"), a trailing value ("1", "4+", "D3"), and any subtype
 // after a hyphen ("Anti-infantry" -> "anti", "Close-quarters" -> "close").
@@ -254,7 +262,7 @@ function render(army, options = {}) {
   const opts = {
     weaponHeaders: bool(options.weaponHeaders, true),
     coreFactionInAbilities: bool(options.coreFactionInAbilities, true),
-    keywordGlossary: bool(options.keywordGlossary, false),
+    keywordGlossary: glossaryMode(options.keywordGlossary),
   };
   let doc = preamble(accent, paper) + '\n\n';
 
@@ -312,7 +320,7 @@ function render(army, options = {}) {
   // Keyword glossary: define every weapon/core keyword the army references AND
   // the export actually carries text for. Referenced-but-undefined keywords
   // (e.g. Lethal Hits — never defined in the export) are counted, not invented.
-  if (opts.keywordGlossary && army.glossary) {
+  if (opts.keywordGlossary !== 'none' && army.glossary) {
     const refBases = new Set();
     for (const u of army.units) {
       for (const w of [...u.ranged, ...u.melee]) {
@@ -330,6 +338,7 @@ function render(army, options = {}) {
       .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
 
     if (entries.length) {
+      if (opts.keywordGlossary === 'separate') doc += `#pagebreak()\n`;
       doc += `#section("Keyword Glossary")\n`;
       for (const [name, text] of entries) {
         doc += `#text(size: 7pt)[#text(weight: "bold")[${mk(name)} — ] ${mk(clean(text))}]\n\n`;
@@ -344,8 +353,8 @@ function render(army, options = {}) {
 }
 
 export default {
-  id: 'compact',
-  name: 'Compact',
+  id: 'standard',
+  name: 'Standard',
   description: 'Dense whole-army quick-reference on one or two pages.',
   options: [
     {
@@ -377,9 +386,14 @@ export default {
     {
       key: 'keywordGlossary',
       label: 'Keyword glossary',
-      type: 'bool',
-      default: false,
-      help: 'Add a section at the end defining every referenced weapon and core keyword that the roster export includes rules text for. Keywords the export doesn’t define (e.g. Lethal Hits) can’t be explained and are only counted in a footnote.',
+      type: 'select',
+      default: 'none',
+      help: 'A section defining every referenced weapon/core keyword the roster export includes rules text for (keywords it doesn’t define, e.g. Lethal Hits, are only counted in a footnote). “Show” appends it after the army rules; “Separate page” starts it on a fresh page.',
+      choices: [
+        { value: 'none', label: 'None' },
+        { value: 'show', label: 'Show' },
+        { value: 'separate', label: 'Separate page' },
+      ],
     },
   ],
   render,
