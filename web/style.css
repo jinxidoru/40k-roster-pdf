@@ -104,10 +104,22 @@ select {
   display: flex; align-items: center; gap: 12px;
   margin-bottom: 10px; font-size: 13px; color: var(--muted);
 }
-.download {
-  margin-left: auto; text-decoration: none; font-weight: 600;
-  background: var(--ink); color: #fff; padding: 7px 12px; border-radius: 6px;
+.actions { margin-left: auto; display: flex; gap: 8px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 7px; border-radius: 6px;
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
 }
+.btn:hover { border-color: var(--ink); }
+.btn svg { display: block; }
+#print {
+  background: #eef4ff; color: #2563eb; border-color: #2563eb;
+}
+#print:hover { background: #e0ebff; border-color: #2563eb; }
+.download {
+  background: #ecfdf3; color: #16a34a; border-color: #16a34a;
+}
+.download:hover { background: #dcfce7; border-color: #16a34a; }
 #viewer {
   flex: 1; width: 100%; border: 1px solid var(--line); border-radius: 6px;
   background: #fff; min-height: 60vh;

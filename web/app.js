@@ -20,7 +20,14 @@ const $ = (id) => document.getElementById(id);
 const els = {
   loading: $('loading'), app: $('app'), drop: $('drop'), file: $('file'), pick: $('pick'),
   renderer: $('renderer'), options: $('options'), status: $('status'),
-  summary: $('summary'), download: $('download'), viewer: $('viewer'),
+  summary: $('summary'), print: $('print'), download: $('download'), viewer: $('viewer'),
+};
+
+// Print the currently-previewed PDF directly. The blob URL is same-origin, so
+// the iframe's built-in PDF viewer can be driven straight to the print dialog.
+els.print.onclick = () => {
+  els.viewer.contentWindow?.focus();
+  els.viewer.contentWindow?.print();
 };
 
 const MODULES = {
@@ -116,19 +123,42 @@ els.drop.addEventListener('drop', (e) => {
 
 async function loadFile(file) {
   try {
-    const json = JSON.parse(await file.text());
-    if (!isNewRecruitRoster(json)) {
-      setStatus('That file is not a New Recruit / BattleScribe roster export (no "roster" section).', true);
-      return;
-    }
-    army = parseRoster(json);
-    els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
-    // One anonymous event per loaded roster (not per re-render), plus the faction.
-    track('pdf-generated');
-    track(`faction/${slug(army.meta.faction) || 'unknown'}`);
-    regenerate();
+    loadRoster(JSON.parse(await file.text()));
   } catch (err) {
     setStatus(`Could not read that file: ${err.message}`, true);
+  }
+}
+
+function loadRoster(json) {
+  if (!isNewRecruitRoster(json)) {
+    setStatus('That file is not a New Recruit / BattleScribe roster export (no "roster" section).', true);
+    return;
+  }
+  army = parseRoster(json);
+  els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
+  // One anonymous event per loaded roster (not per re-render), plus the faction.
+  track('pdf-generated');
+  track(`faction/${slug(army.meta.faction) || 'unknown'}`);
+  regenerate();
+}
+
+// Dev-only convenience: ?preload=<name> auto-loads staging/<name> so testing
+// doesn't require dropping a file each reload. Localhost only — staging/ is
+// gitignored and never deployed, so this is inert on the live site.
+function isLocalhost() {
+  const h = location.hostname;
+  return /^(localhost|127\.|0\.0\.0\.0|::1|\[::1\])/.test(h) || h.endsWith('.local');
+}
+async function preloadFromQuery() {
+  const name = new URLSearchParams(location.search).get('preload');
+  if (!name || !isLocalhost()) return;
+  const safe = name.replace(/[^\w.\- ]/g, ''); // strip path separators etc.
+  try {
+    const res = await fetch(`staging/${encodeURIComponent(safe)}`);
+    if (!res.ok) { setStatus(`Preload failed: staging/${safe} (HTTP ${res.status})`, true); return; }
+    loadRoster(await res.json());
+  } catch (err) {
+    setStatus(`Preload failed: ${err.message}`, true);
   }
 }
 
@@ -156,6 +186,7 @@ function initEngine() {
         els.download.href = lastUrl;
         els.download.download = `${army.meta.name}.pdf`;
         els.download.hidden = false;
+        els.print.hidden = false;
         setStatus('');
       } else if (m.type === 'error') {
         setStatus(`Failed to generate PDF: ${m.message}`, true);
@@ -205,6 +236,7 @@ initEngine()
   .then(() => {
     els.loading.hidden = true;
     els.app.hidden = false;
+    preloadFromQuery();
   })
   .catch((err) => {
     els.loading.innerHTML = `<p class="error">Couldn't load the PDF engine: ${err.message || err}</p>`;
