@@ -36,6 +36,8 @@ jobs:
           find _site -name '*.js' -print0 | xargs -0 perl -pi -e "s{from '(\.\.?/[^']+\.js)'}{from '\$1?v=$VER'}g"
           find _site -name '*.js' -print0 | xargs -0 perl -pi -e "s{new URL\('\./worker\.js'}{new URL('./worker.js?v=$VER'}g"
           perl -pi -e "s{(src=\"web/app\.js)\"}{\$1?v=$VER\"}g; s{(href=\"web/style\.css)\"}{\$1?v=$VER\"}g" _site/index.html
+          # Stamp the version badge: point it at this commit and show the short sha.
+          perl -pi -e "s{(<a id=\"version\"[^>]*href=\")[^\"]*(\"[^>]*>)dev(</a>)}{\${1}https://github.com/jinxidoru/40k-roster-pdf/commit/$GITHUB_SHA\${2}$VER\${3}}g" _site/index.html
           echo "Stamped assets with v=$VER"
       - uses: actions/configure-pages@v5
         with:
