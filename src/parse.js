@@ -218,6 +218,28 @@ export function isNewRecruitRoster(json) {
   return !!(json && json.roster && Array.isArray(json.roster.forces));
 }
 
+// A name -> definition map of every rule object the export carries text for
+// (weapon USRs like Devastating Wounds, core abilities like Deep Strike, army
+// rules, …). Coverage is whatever the export chose to embed — many referenced
+// keywords (e.g. Lethal Hits) simply have no definition here. First name wins.
+function collectGlossary(json) {
+  const g = {};
+  const walk = (o) => {
+    if (Array.isArray(o)) { for (const v of o) walk(v); return; }
+    if (o && typeof o === 'object') {
+      if (typeof o.name === 'string' && typeof o.description === 'string' && o.description.trim()) {
+        // Collapse whitespace (incl. non-breaking spaces) so "Deadly Demise 1"
+        // and "Deadly Demise 1" don't become two separate glossary entries.
+        const key = o.name.replace(/\s+/g, ' ').trim();
+        if (!(key in g)) g[key] = o.description;
+      }
+      for (const k in o) walk(o[k]);
+    }
+  };
+  walk(json);
+  return g;
+}
+
 // Parse an already-JSON-decoded roster export into the army model.
 export function parseRoster(json) {
   const roster = json.roster;
@@ -278,6 +300,7 @@ export function parseRoster(json) {
     enhancements: usedEnhancements,
     enhancementPool: [],
     stratagems: [],
+    glossary: collectGlossary(json),
     warnings,
   };
 }

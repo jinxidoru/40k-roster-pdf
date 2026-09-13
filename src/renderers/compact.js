@@ -126,7 +126,7 @@ function rosterTable(units) {
   );
 }
 
-function weaponTable(u) {
+function weaponTable(u, opts = {}) {
   const all = [
     ...u.ranged.map((w) => ({ ...w, kind: 'R' })),
     ...u.melee.map((w) => ({ ...w, kind: 'M' })),
@@ -153,29 +153,32 @@ function weaponTable(u) {
   const header = ['', 'Weapon', 'Rng', 'A', 'BS/WS', 'S', 'AP', 'D', 'Keywords']
     .map((h) => `hc[${h}]`)
     .join(', ');
-  return (
+  // With headers off, there's no header row: shade even rows so the first data
+  // row stays clear, and pull the table up tight against the unit-name band.
+  const headerless = opts.weaponHeaders === false;
+  const fill = headerless
+    ? `  fill: (_, r) => if calc.even(r) and r != 0 { rgb("#f2f2f2") },\n`
+    : `  fill: (_, r) => if r != 0 and calc.odd(r) { rgb("#f2f2f2") },\n`;
+  const table =
     `#table(\n` +
     `  columns: (auto, 1fr, auto, auto, auto, auto, auto, auto, 1.3fr),\n` +
     `  align: (center, left, center, center, center, center, center, center, left),\n` +
-    `  fill: (_, r) => if r != 0 and calc.odd(r) { rgb("#f2f2f2") },\n` +
-    `  ${header},\n` +
+    fill +
+    (headerless ? '' : `  ${header},\n`) +
     rows.map((r) => `  ${r},`).join('\n') +
-    `\n)\n`
-  );
+    `\n)\n`;
+  return headerless ? `#block(above: 2pt, breakable: false)[\n${table}]\n` : table;
 }
 
 // Abilities inline: bold Name — text, no surrounding quotes, faint pipe between.
-function abilitiesInline(abilities) {
-  return abilities
-    .map((a) => {
-      const t = clean(a.text);
-      const name = `#text(weight: "bold")[${mk(a.name)}]`;
-      return t ? `${name} — ${mk(t)}` : name;
-    })
-    .join('  #text(fill: luma(180))[|]  ');
+const ABIL_SEP = '  #text(fill: luma(180))[|]  ';
+function abilityItem(a) {
+  const t = clean(a.text);
+  const name = `#text(weight: "bold")[${mk(a.name)}]`;
+  return t ? `${name} — ${mk(t)}` : name;
 }
 
-function unitDetail(u) {
+function unitDetail(u, opts = {}) {
   const parts = [];
 
   // Title meta: model count and keywords (UPPERCASE); points omitted here.
@@ -187,19 +190,30 @@ function unitDetail(u) {
 
   // (Stat profiles — including alternate/secondary — live only in the top table.)
 
-  const wt = weaponTable(u);
+  const wt = weaponTable(u, opts);
   if (wt) parts.push(wt.trimEnd());
 
-  // Compact Core / Faction ability keyword line.
+  // Core / Faction ability keywords. Either on their own compact line (default)
+  // or folded into the front of the abilities line as "*Core* — …".
   const cf = [];
-  if (u.core && u.core.length) cf.push(`#text(weight: "bold")[Core: ] ${mk(u.core.join(', '))}`);
-  if (u.faction && u.faction.length) cf.push(`#text(weight: "bold")[Faction: ] ${mk(u.faction.join(', '))}`);
-  if (cf.length) {
-    parts.push(`#text(size: 6.6pt, fill: luma(70))[${cf.join('    #text(fill: luma(180))[·]    ')}]`);
+  if (u.core && u.core.length) cf.push({ label: 'Core', vals: u.core });
+  if (u.faction && u.faction.length) cf.push({ label: 'Faction', vals: u.faction });
+  const inAbilities = opts.coreFactionInAbilities === true;
+
+  if (!inAbilities && cf.length) {
+    const line = cf
+      .map(({ label, vals }) => `#text(weight: "bold")[${label}: ] ${mk(vals.join(', '))}`)
+      .join('    #text(fill: luma(180))[·]    ');
+    parts.push(`#text(size: 6.6pt, fill: luma(70))[${line}]`);
   }
 
-  if (u.abilities.length) {
-    parts.push(`#text(size: 6.9pt)[${abilitiesInline(u.abilities)}]`);
+  const items = [];
+  if (inAbilities) {
+    for (const { label, vals } of cf) items.push(`#text(weight: "bold")[${label}] — ${mk(vals.join(', '))}`);
+  }
+  for (const a of u.abilities) items.push(abilityItem(a));
+  if (items.length) {
+    parts.push(`#text(size: 6.9pt)[${items.join(ABIL_SEP)}]`);
   }
   if (u.enhancement) {
     parts.push(`#text(size: 6.9pt, fill: accent)[#text(weight: "bold")[Enhancement — ${mk(u.enhancement.name)} (${u.enhancement.points} pts) — ] ${mk(clean(u.enhancement.text))}]`);
@@ -214,9 +228,34 @@ function unitDetail(u) {
 
 const PAPERS = { 'us-letter': 'us-letter', a4: 'a4', a5: 'a5' };
 
+// Options may arrive as real booleans (checkbox) or "true"/"false" strings
+// (persisted/query). Normalize to a boolean with an explicit default.
+function bool(v, def) {
+  if (v === undefined || v === null || v === '') return def;
+  return v === true || v === 'true';
+}
+
+// Reduce a keyword token to a base name for matching against glossary keys:
+// drop conditional (":…"), a trailing value ("1", "4+", "D3"), and any subtype
+// after a hyphen ("Anti-infantry" -> "anti", "Close-quarters" -> "close").
+function kwBase(s) {
+  return String(s || '')
+    .replace(/ /g, ' ')
+    .toLowerCase()
+    .split(':')[0]
+    .replace(/\s+(d?\d+\+?|\d\+)$/, '')
+    .split('-')[0]
+    .trim();
+}
+
 function render(army, options = {}) {
   const accent = accentFor(army.meta.faction);
   const paper = PAPERS[options.paper] || 'us-letter';
+  const opts = {
+    weaponHeaders: bool(options.weaponHeaders, true),
+    coreFactionInAbilities: bool(options.coreFactionInAbilities, true),
+    keywordGlossary: bool(options.keywordGlossary, false),
+  };
   let doc = preamble(accent, paper) + '\n\n';
 
   const sub = [
@@ -235,7 +274,7 @@ function render(army, options = {}) {
   );
 
   doc += rosterTable(units) + '\n';
-  for (const u of units) doc += unitDetail(u);
+  for (const u of units) doc += unitDetail(u, opts);
 
   if (army.enhancements.length) {
     doc += `#section("Enhancements")\n`;
@@ -270,6 +309,37 @@ function render(army, options = {}) {
     }
   }
 
+  // Keyword glossary: define every weapon/core keyword the army references AND
+  // the export actually carries text for. Referenced-but-undefined keywords
+  // (e.g. Lethal Hits — never defined in the export) are counted, not invented.
+  if (opts.keywordGlossary && army.glossary) {
+    const refBases = new Set();
+    for (const u of army.units) {
+      for (const w of [...u.ranged, ...u.melee]) {
+        for (const part of String(w.chars.Keywords || '').split(',')) {
+          const b = kwBase(part);
+          if (b) refBases.add(b);
+        }
+      }
+      for (const c of u.core || []) { const b = kwBase(c); if (b) refBases.add(b); }
+    }
+    const defined = new Set(Object.keys(army.glossary).map(kwBase));
+    const undefinedCount = [...refBases].filter((b) => b && !defined.has(b)).length;
+    const entries = Object.entries(army.glossary)
+      .filter(([name]) => refBases.has(kwBase(name)))
+      .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+
+    if (entries.length) {
+      doc += `#section("Keyword Glossary")\n`;
+      for (const [name, text] of entries) {
+        doc += `#text(size: 7pt)[#text(weight: "bold")[${mk(name)} — ] ${mk(clean(text))}]\n\n`;
+      }
+      if (undefinedCount) {
+        doc += `#text(size: 6.4pt, fill: luma(150), style: "italic")[${undefinedCount} other referenced keyword${undefinedCount === 1 ? '' : 's'} ${undefinedCount === 1 ? 'has' : 'have'} no definition in this roster export.]\n\n`;
+      }
+    }
+  }
+
   return doc;
 }
 
@@ -283,11 +353,33 @@ export default {
       label: 'Page size',
       type: 'select',
       default: 'us-letter',
+      help: 'Physical page size for the sheet. US Letter and A4 are full-size; A5 is a compact half-of-A4 format (fits more pages, smaller print).',
       choices: [
         { value: 'us-letter', label: 'US Letter' },
         { value: 'a4', label: 'A4' },
         { value: 'a5', label: 'A5' },
       ],
+    },
+    {
+      key: 'weaponHeaders',
+      label: 'Weapon table headers',
+      type: 'bool',
+      default: true,
+      help: 'Show the column-header row (Weapon / Rng / A / BS-WS / S / AP / D / Keywords) above each unit’s weapons. Turn off to drop the repeated headers and tuck the weapon table tight under the unit’s name band — denser, but you lose the column labels.',
+    },
+    {
+      key: 'coreFactionInAbilities',
+      label: 'Core/Faction in ability list',
+      type: 'bool',
+      default: true,
+      help: 'Fold each unit’s Core and Faction ability keywords into the front of its abilities line (e.g. “Core — Deep Strike, Infiltrators | Faction — Oath of Moment”) instead of showing them on their own separate line above the abilities.',
+    },
+    {
+      key: 'keywordGlossary',
+      label: 'Keyword glossary',
+      type: 'bool',
+      default: false,
+      help: 'Add a section at the end defining every referenced weapon and core keyword that the roster export includes rules text for. Keywords the export doesn’t define (e.g. Lethal Hits) can’t be explained and are only counted in a footnote.',
     },
   ],
   render,
