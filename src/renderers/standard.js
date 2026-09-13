@@ -320,7 +320,7 @@ function render(army, options = {}) {
   // Keyword glossary: define every weapon/core keyword the army references AND
   // the export actually carries text for. Referenced-but-undefined keywords
   // (e.g. Lethal Hits — never defined in the export) are counted, not invented.
-  if (opts.keywordGlossary !== 'none' && army.glossary) {
+  if (opts.keywordGlossary !== 'none') {
     const refBases = new Set();
     for (const u of army.units) {
       for (const w of [...u.ranged, ...u.melee]) {
@@ -331,20 +331,31 @@ function render(army, options = {}) {
       }
       for (const c of u.core || []) { const b = kwBase(c); if (b) refBases.add(b); }
     }
-    const defined = new Set(Object.keys(army.glossary).map(kwBase));
-    const undefinedCount = [...refBases].filter((b) => b && !defined.has(b)).length;
-    const entries = Object.entries(army.glossary)
-      .filter(([name]) => refBases.has(kwBase(name)))
-      .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+    // Combine roster-embedded definitions (authoritative for this list) with the
+    // bundled core-keyword fallback (army.coreGlossary), keyed by base name so
+    // value-variants and cross-source duplicates collapse. Roster wins; core
+    // fills gaps. coreGlossary is absent if src/keywords.json was removed.
+    const byBase = new Map();
+    const add = (name, text) => {
+      const b = kwBase(name);
+      if (!b || !refBases.has(b) || byBase.has(b)) return;
+      byBase.set(b, { name, text });
+    };
+    for (const [name, text] of Object.entries(army.glossary || {})) add(name, text);
+    for (const [name, text] of Object.entries(army.coreGlossary || {})) add(name, text);
+
+    const entries = [...byBase.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const undefinedCount = [...refBases].filter((b) => b && !byBase.has(b)).length;
 
     if (entries.length) {
       if (opts.keywordGlossary === 'separate') doc += `#pagebreak()\n`;
       doc += `#section("Keyword Glossary")\n`;
-      for (const [name, text] of entries) {
+      for (const { name, text } of entries) {
         doc += `#text(size: 7pt)[#text(weight: "bold")[${mk(name)} — ] ${mk(clean(text))}]\n\n`;
       }
       if (undefinedCount) {
-        doc += `#text(size: 6.4pt, fill: luma(150), style: "italic")[${undefinedCount} other referenced keyword${undefinedCount === 1 ? '' : 's'} ${undefinedCount === 1 ? 'has' : 'have'} no definition in this roster export.]\n\n`;
+        doc += `#text(size: 6.4pt, fill: luma(150), style: "italic")[${undefinedCount} other referenced keyword${undefinedCount === 1 ? '' : 's'} ${undefinedCount === 1 ? 'has' : 'have'} no definition available.]\n\n`;
       }
     }
   }

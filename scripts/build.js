@@ -58,6 +58,14 @@ if (!isNewRecruitRoster(raw)) {
 }
 const army = parseRoster(raw);
 
+// Optional bundled core-keyword definitions (scripts/build-keywords.js). Absent
+// (file removed) → glossary falls back to roster-embedded definitions only.
+const kwPath = join(ROOT, 'src', 'keywords.json');
+if (existsSync(kwPath)) {
+  try { army.coreGlossary = JSON.parse(readFileSync(kwPath, 'utf8')).keywords || {}; }
+  catch { /* ignore a malformed keywords file */ }
+}
+
 const outDir = join(ROOT, 'build');
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 const stem = basename(input).replace(/\.json$/i, '');

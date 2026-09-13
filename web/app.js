@@ -67,6 +67,7 @@ const MODULES = {
 let worker = null;
 let ready = false;
 let army = null;
+let coreGlossary = {}; // bundled core-keyword definitions; {} if src/keywords.json is absent
 let latestId = 0; // newest render request; older worker results are ignored
 let currentContent = ''; // Typst source of the current preview (for lazy PDF)
 let pdfUrl = null; // cached PDF blob URL for currentContent, or null if stale
@@ -222,6 +223,7 @@ function loadRoster(json) {
     return;
   }
   army = parseRoster(json);
+  army.coreGlossary = coreGlossary;
   els.renderOptions.hidden = false;
   els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
   // One anonymous event per loaded roster (not per re-render), plus the faction.
@@ -237,6 +239,16 @@ function isLocalhost() {
   const h = location.hostname;
   return /^(localhost|127\.|0\.0\.0\.0|::1|\[::1\])/.test(h) || h.endsWith('.local');
 }
+// Load the bundled core-keyword definitions. Absent file (removed on purpose)
+// or any error → coreGlossary stays {} and the glossary quietly falls back to
+// roster-embedded definitions only. Never rejects.
+async function loadCoreKeywords() {
+  try {
+    const res = await fetch('src/keywords.json');
+    if (res.ok) coreGlossary = (await res.json()).keywords || {};
+  } catch { /* feature simply off */ }
+}
+
 async function preloadFromQuery() {
   const name = new URLSearchParams(location.search).get('preload');
   if (!name || !isLocalhost()) return;
@@ -379,9 +391,9 @@ function slug(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-// --- boot: build controls (hidden), load engine, then reveal ---------------
+// --- boot: build controls (hidden), load engine + keywords, then reveal -----
 buildOptions();
-initEngine()
+Promise.all([initEngine(), loadCoreKeywords()])
   .then(() => {
     els.loading.hidden = true;
     els.app.hidden = false;

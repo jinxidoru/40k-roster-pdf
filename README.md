@@ -41,6 +41,12 @@ node scripts/build.js roster.json --renderer standard --typ-only --no-open
 
 - Detachment-rule and stratagem *text* aren't included in roster exports, so those
   sections are omitted (the army rule, e.g. Oath of Moment, is included).
+- The optional **keyword glossary** defines core weapon/ability keywords (Lethal Hits,
+  Sustained Hits, …) that roster exports don't carry. That rules text is extracted from
+  the community [BSData](https://github.com/BSData/wh40k-11e) catalogue into a single
+  file, `src/keywords.json` (regenerate with `node scripts/build-keywords.js`). Delete
+  that one file to remove all bundled rules text — the glossary then falls back to
+  whatever definitions a roster export includes.
 - Not affiliated with Games Workshop or New Recruit. Game data is © Games Workshop.
 
 ## License
