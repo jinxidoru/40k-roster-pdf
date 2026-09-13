@@ -212,7 +212,7 @@ function unitDetail(u) {
   return `#block(breakable: false, width: 100%)[\n${parts.join('\n\n')}\n]\n#v(3pt)\n\n`;
 }
 
-const PAPERS = { 'us-letter': 'us-letter', a4: 'a4' };
+const PAPERS = { 'us-letter': 'us-letter', a4: 'a4', a5: 'a5' };
 
 function render(army, options = {}) {
   const accent = accentFor(army.meta.faction);
@@ -286,6 +286,7 @@ export default {
       choices: [
         { value: 'us-letter', label: 'US Letter' },
         { value: 'a4', label: 'A4' },
+        { value: 'a5', label: 'A5' },
       ],
     },
   ],
