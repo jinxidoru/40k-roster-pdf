@@ -76,6 +76,20 @@ els.renderer.addEventListener('change', () => {
 });
 
 // --- options UI (from the renderer's schema, values persisted) -------------
+
+// Circular-i glyph carrying an option's longer explanation as a hover/focus
+// tooltip (native title). Kept a sibling of the label so it never toggles the
+// control it explains.
+function infoIcon(text) {
+  const span = document.createElement('span');
+  span.className = 'info';
+  span.title = text;
+  span.tabIndex = 0;
+  span.setAttribute('aria-label', text);
+  span.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>';
+  return span;
+}
+
 function buildOptions() {
   const r = byId[els.renderer.value] || defaultRenderer;
   els.options.innerHTML = '';
@@ -84,11 +98,22 @@ function buildOptions() {
     if (val === undefined) val = opt.key === 'paper' ? defaultPaper() : opt.default;
     settings.options[opt.key] = val;
 
+    const row = document.createElement('div');
+    row.className = 'opt';
+    const id = `opt-${opt.key}`;
+
+    const name = document.createElement('div');
+    name.className = 'opt-name';
+    const lbl = document.createElement('label');
+    lbl.htmlFor = id;
+    lbl.textContent = opt.label;
+    name.appendChild(lbl);
+    if (opt.help) name.appendChild(infoIcon(opt.help));
+    row.appendChild(name);
+
     if (opt.type === 'select') {
-      const wrap = document.createElement('label');
-      wrap.className = 'opt';
-      wrap.append(`${opt.label} `);
       const sel = document.createElement('select');
+      sel.id = id;
       for (const c of opt.choices) {
         const o = document.createElement('option');
         o.value = c.value;
@@ -101,10 +126,21 @@ function buildOptions() {
         saveSettings();
         regenerate();
       });
-      wrap.appendChild(sel);
-      els.options.appendChild(wrap);
+      row.appendChild(sel);
+    } else if (opt.type === 'bool') {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = id;
+      cb.checked = !!val;
+      cb.addEventListener('change', () => {
+        settings.options[opt.key] = cb.checked;
+        saveSettings();
+        regenerate();
+      });
+      row.appendChild(cb);
     }
-    // future option types (bool/number/color) get their controls here
+    // future option types (number/color) get their controls here
+    els.options.appendChild(row);
   }
 }
 
@@ -208,7 +244,6 @@ function regenerate() {
     setStatus(`Render error: ${err.message || err}`, true);
     return;
   }
-  setStatus('Rendering…');
   const id = ++latestId;
   worker.postMessage({ type: 'render', id, mainContent });
 }
