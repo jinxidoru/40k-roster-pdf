@@ -16,6 +16,8 @@ export default {
   description: 'One unit per card; the PDF imposes the selected cards onto the page.',
   // Tells the app to use the per-card preview (individual cards + checkboxes).
   perCardPreview: true,
+  // Suffix for the downloaded PDF filename: "Army Name (Cards).pdf".
+  pdfSuffix: 'Cards',
   options: [
     {
       key: 'cardSize',
@@ -26,7 +28,9 @@ export default {
       choices: sizeChoices,
     },
     {
-      key: 'paper',
+      // Distinct key (not 'paper') so it doesn't share with Standard's page
+      // size, whose A5/Half-Letter choices this renderer doesn't offer.
+      key: 'cardPaper',
       label: 'Print page size',
       type: 'select',
       default: 'us-letter',
@@ -37,15 +41,17 @@ export default {
       ],
     },
     {
-      key: 'showPoints',
+      // Distinct key (not 'showPoints') so it keeps its own default and doesn't
+      // link to Standard's roster Points column.
+      key: 'summaryPoints',
       label: 'Points on summary card',
       type: 'bool',
-      default: true,
-      help: 'Show a Pts column on the army-summary card. Turn off for a cleaner summary table when points aren’t needed.',
+      default: false,
+      help: 'Show a Pts column on the army-summary card. Turn on to include each unit’s points cost.',
     },
     {
       key: 'opponentCopy',
-      label: 'Second summary (opponent)',
+      label: 'Summary card for opponent',
       type: 'bool',
       default: false,
       help: 'When the army-summary card is included, print a second copy — meant to hand to your opponent so they can see your army at a glance.',
@@ -73,7 +79,7 @@ export default {
   // selectable card (checkbox) alongside the units.
   summaryDoc(army, options) {
     return summaryCardDoc(army, options.cardSize, resolveAccent(options, army),
-      { showPoints: options.showPoints !== false });
+      { showPoints: !!options.summaryPoints });
   },
 
   // A standalone Typst doc for one card group's cards (per-card preview). `index`
@@ -95,10 +101,10 @@ export default {
       .filter((i) => groups[i])
       .map((i) => groupView(groups[i]));
     const summaryCopies = options.summarySelected ? (options.opponentCopy ? 2 : 1) : 0;
-    return imposeDoc(views, options.cardSize, options.paper, resolveAccent(options, army), {
+    return imposeDoc(views, options.cardSize, options.cardPaper, resolveAccent(options, army), {
       army,
       summaryCopies,
-      showPoints: options.showPoints !== false,
+      showPoints: !!options.summaryPoints,
       invBottom: !!options.invAtBottom,
     });
   },

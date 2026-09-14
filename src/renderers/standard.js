@@ -2,8 +2,8 @@
 // render(army, options) -> Typst source string. Pure/browser-safe.
 
 import {
-  accentFor, clean, formatKeywords, ts, mk, statVal,
-  splitProfiles, rosterGroups, subsetKeywords, datasheetGroups,
+  clean, formatKeywords, ts, mk, statVal,
+  splitProfiles, rosterGroups, subsetKeywords, datasheetGroups, resolveAccent,
 } from './shared.js';
 
 // Typst preamble (page/style + helper functions). `accent` is the faction color,
@@ -16,16 +16,22 @@ function preamble(accent, paper) {
 #let ink = rgb("#1a1a1a")
 #let faint = luma(150)
 #let band = luma(238)
+// Readable text color on the accent: dark on light accents (e.g. yellow), else white.
+#let onaccent = {
+  let c = accent.components()
+  let lum = 0.299 * (c.at(0) / 100%) + 0.587 * (c.at(1) / 100%) + 0.114 * (c.at(2) / 100%)
+  if lum > 0.62 { rgb("#1a1a1a") } else { white }
+}
 #set table(inset: (x: 4pt, y: 2.2pt), stroke: 0.3pt + luma(200))
-#let hc(body) = table.cell(fill: accent, text(fill: white, weight: "bold", size: 7pt, body))
+#let hc(body) = table.cell(fill: accent, text(fill: onaccent, weight: "bold", size: 7pt, body))
 // Weapon-kind marker locked into a fixed box so the glyph never changes row
 // height; dy nudges the glyph vertically (crosshair sits a touch high).
 #let ico(g, dy: 0pt) = box(width: 9pt, height: 0.85em, align(center + horizon, move(dy: dy, text(size: 8pt, g))))
 #let sheettitle(name, sub) = {
   block(width: 100%, fill: accent, inset: (x: 6pt, y: 5pt), radius: 2pt)[
-    #text(fill: white, weight: "bold", size: 13pt, name)
+    #text(fill: onaccent, weight: "bold", size: 13pt, name)
     #h(1fr)
-    #text(fill: white, size: 8pt, sub)
+    #text(fill: onaccent, size: 8pt, sub)
   ]
   v(2pt)
 }
@@ -254,7 +260,7 @@ function kwBase(s) {
 }
 
 function render(army, options = {}) {
-  const accent = accentFor(army.meta.faction);
+  const accent = resolveAccent(options, army);
   const paper = PAPERS[options.paper] || 'us-letter';
   const opts = {
     weaponHeaders: bool(options.weaponHeaders, true),
@@ -420,6 +426,13 @@ export default {
         { value: 'include', label: 'Include' },
         { value: 'separate', label: 'Separate page' },
       ],
+    },
+    {
+      key: 'accent',
+      label: 'Accent color',
+      type: 'color',
+      default: 'faction',
+      help: 'Color for the title bar and table headers. Default uses the army’s faction/sub-faction color; header text switches to dark automatically on light colors.',
     },
   ],
   render,

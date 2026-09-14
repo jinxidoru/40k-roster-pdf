@@ -69,9 +69,10 @@ els.download.addEventListener('click', async (e) => {
   e.preventDefault();
   try {
     const url = await ensurePdf();
+    const suffix = currentRenderer && currentRenderer.pdfSuffix ? ` (${currentRenderer.pdfSuffix})` : '';
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${army.meta.name}.pdf`;
+    a.download = `${army.meta.name}${suffix}.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -192,7 +193,7 @@ function buildOptions() {
   els.options.innerHTML = '';
   for (const opt of r.options || []) {
     let val = settings.options[opt.key];
-    if (val === undefined) val = opt.key === 'paper' ? defaultPaper() : opt.default;
+    if (val === undefined) val = (opt.key === 'paper' || opt.key === 'cardPaper') ? defaultPaper() : opt.default;
     settings.options[opt.key] = val;
 
     const row = document.createElement('div');

@@ -4,9 +4,12 @@
 // style variants. Pure/browser-safe — everything returns Typst source strings.
 
 import {
-  accentFor, paletteColorFor, clean, formatKeywords, ts, mk, statVal,
-  splitProfiles, rosterGroups, subsetKeywords, datasheetGroups,
+  clean, formatKeywords, ts, mk, statVal,
+  splitProfiles, rosterGroups, subsetKeywords, datasheetGroups, resolveAccent,
 } from './shared.js';
+
+// Re-exported so cards.js (which imports renderer helpers from here) gets it too.
+export { resolveAccent };
 
 // Card sizes in millimetres. Standard = Magic/Poker (63×88mm ≈ 2.5×3.5in).
 // Add more entries later (Bridge 57×89, Tarot 70×120, …) — the option is built
@@ -15,13 +18,6 @@ export const CARD_SIZES = {
   standard: { w: 63, h: 88, label: 'Standard (Magic / Poker)' },
   tarot: { w: 70, h: 120, label: 'Tarot' },
 };
-
-// Accent resolution: an explicit hex from the color option, else the faction color.
-export function resolveAccent(options, army) {
-  const a = options && options.accent;
-  if (typeof a === 'string' && /^#[0-9a-fA-F]{6}$/.test(a)) return a;
-  return paletteColorFor(army.meta.faction) || accentFor(army.meta.faction);
-}
 
 // The main (bulk) profile — matches the unit name, else the first profile.
 function mainProfile(u) {
@@ -92,7 +88,8 @@ export function unitView(u) {
 // card, which lists all their enhancements (see datasheetGroups). The view's
 // enhancements come from the merged group, not the single representative unit.
 export function cardGroups(army) {
-  return datasheetGroups(army.units);
+  return datasheetGroups(army.units).sort((a, b) =>
+    a.unit.name.localeCompare(b.unit.name, undefined, { sensitivity: 'base' }));
 }
 export function groupView(group) {
   const v = unitView(group.unit);
@@ -170,7 +167,7 @@ export function preamble(accent, titlefont = 'Anton') {
       curve.close(),
     ))
     place(top + left, curve(
-      stroke: 1.1pt + accent,
+      stroke: 0.5pt + accent, // match the stat-box outline weight
       fill: none,
       curve.move((0mm, 0mm)),
       curve.line((0mm, 0.42 * h)),
@@ -644,11 +641,11 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   const [pw, ph] = PAPER_MM[paperKey] || PAPER_MM['us-letter'];
   const units = views.map(unitDict).join(',\n    ');
   const inv = opts.invBottom ? 'true' : 'false';
-  // Army-summary card copies (0/1/2). The summary is landscape; in the PDF we
-  // rotate it 90° so the physical card is portrait like the others.
+  // Army-summary card copies (0/1/2). In the PDF the summary is a portrait card
+  // (header at top) like the others, repeated once per copy (extra = opponent's).
   const copies = Math.max(0, Math.min(2, opts.summaryCopies || 0));
   const summaryLit = (opts.army && copies > 0)
-    ? summaryCardsLit(opts.army, w, h, false, { showPoints: opts.showPoints }) // square corners in the PDF
+    ? summaryPortraitCardsLit(opts.army, w, h, false, { showPoints: opts.showPoints }) // square corners in the PDF
     : '()';
   return `${preamble(accentHex, 'Anton')}
 #set page(width: ${pw}mm, height: ${ph}mm, margin: 0pt)
@@ -656,9 +653,9 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   let cw = ${w}mm
   let ch = ${h}mm
   let all = ()
-  // Summary card(s): landscape content rotated into a portrait cell, repeated
-  // once per requested copy (the extra copy is meant for your opponent).
-  let summary = (${summaryLit}).map(c => box(width: cw, height: ch, clip: true, place(center + horizon, rotate(90deg, reflow: true, c))))
+  // Summary card(s): portrait, header at the top — same orientation as the unit
+  // cards. Repeated once per requested copy (the extra copy is for your opponent).
+  let summary = (${summaryLit})
   for _c in range(${copies}) { all = all + summary }
   for u in (${units}) { all = all + makecards(u, cw, ch, round: false, invBottom: ${inv}) }
   let cols = calc.max(1, calc.floor(${pw}mm / cw))
@@ -693,34 +690,26 @@ export function unitList(army) {
   return cardGroups(army).map((g, i) => ({ index: i, name: g.unit.name }));
 }
 
-// --- army summary card (landscape) -----------------------------------------
-// A single landscape card: army header + a compact stat table of every unit.
-// Landscape = the card rotated, so its width is the portrait height (ch).
-// The table mirrors Standard's roster table: identical units are de-duplicated
-// (with a leading count column when any appear in multiples), alternate profiles
-// are shown as indented italic rows, subset keywords follow the name after an
-// em-dash, and the Pts column is optional.
+// --- army summary card ------------------------------------------------------
+// A stat table of every unit, mirroring Standard's roster table: units are
+// de-duplicated (leading count column only when some appear in multiples),
+// alternate profiles show as indented italic rows, subset keywords follow the
+// name after an em-dash, the Pts column is optional, and rows are alphabetized.
+// Two layouts share this model: LANDSCAPE for the on-screen preview, and a
+// PORTRAIT card (header at top, like the unit cards) for the imposed PDF.
 const SUMMARY_STAT_KEYS = ['M', 'T', 'Sv', 'InSv', 'W', 'LD', 'OC'];
 
-// Name cell: bold name (+ model count), then surfaced subset keywords in a
-// lighter color after an em-dash.
-function summaryNameCell(u) {
-  const models = u.models > 1 ? ` (${u.models})` : '';
-  const kw = subsetKeywords(u.keywords || []);
-  const tail = kw.length
-    ? ` #text(fill: luma(130), size: 5pt, weight: "regular")[— ${mk(kw.join(', ').toUpperCase())}]`
-    : '';
-  return `[#text(size: 6.2pt, weight: "bold")[${mk(u.name + models)}]${tail}]`;
-}
+// Font sizes (pt) for the two layouts; portrait is smaller to fit the narrow card.
+const SUMMARY_SIZE = {
+  landscape: { name: 6.2, kw: 5, cell: 6.2, secName: 6, secCell: 6, header: 5.5, inset: 3 },
+  portrait: { name: 5.6, kw: 4.4, cell: 5.6, secName: 5.4, secCell: 5.4, header: 5, inset: 2 },
+};
 
-// Build the army-summary as an array-literal of landscape cards. A large army
-// overflows onto extra cards (rows chunked by height), each repeating the army
-// header at the top. `round` controls the corners (rounded preview / square PDF).
-function summaryCardsLit(army, cw, ch, round = true, opts = {}) {
-  const lw = ch; // landscape width  (portrait height)
-  const lh = cw; // landscape height (portrait width)
+// Build the shared table model (columns + rows) for the army summary.
+function summaryModel(army, opts, S) {
   const showPoints = opts.showPoints !== false;
-  const groups = rosterGroups(army.units);
+  const groups = rosterGroups(army.units).sort((a, b) =>
+    a.unit.name.localeCompare(b.unit.name, undefined, { sensitivity: 'base' }));
   const showCount = groups.some((g) => g.count > 1);
   const meta = [
     army.meta.faction, army.meta.detachment, army.meta.battleSize,
@@ -741,8 +730,17 @@ function summaryCardsLit(army, cw, ch, round = true, opts = {}) {
     ...(showPoints ? ['center'] : []),
   ];
   const headerRow = cols
-    .map((c) => `table.cell(fill: accent)[#text(fill: onaccent, weight: "bold", size: 5.5pt)[${mk(c)}]]`)
+    .map((c) => `table.cell(fill: accent)[#text(fill: onaccent, weight: "bold", size: ${S.header}pt)[${mk(c)}]]`)
     .join(', ');
+
+  const nameCell = (u) => {
+    const models = u.models > 1 ? ` (${u.models})` : '';
+    const kw = subsetKeywords(u.keywords || []);
+    const tail = kw.length
+      ? ` #text(fill: luma(130), size: ${S.kw}pt, weight: "regular")[— ${mk(kw.join(', ').toUpperCase())}]`
+      : '';
+    return `[#text(size: ${S.name}pt, weight: "bold")[${mk(u.name + models)}]${tail}]`;
+  };
 
   const rows = [];
   for (const g of groups) {
@@ -750,46 +748,71 @@ function summaryCardsLit(army, cw, ch, round = true, opts = {}) {
     const { main, secondary } = splitProfiles(u);
     const chars = main ? main.chars : {};
     rows.push([
-      ...(showCount ? [`[#text(size: 6.2pt)[${mk(String(g.count))}]]`] : []),
-      summaryNameCell(u),
-      ...SUMMARY_STAT_KEYS.map((k) => `[#text(size: 6.2pt)[${mk(statVal(chars, k) || '—')}]]`),
-      ...(showPoints ? [`[#text(size: 6.2pt)[${mk(u.points != null ? String(u.points) : '—')}]]`] : []),
+      ...(showCount ? [`[#text(size: ${S.cell}pt)[${mk(String(g.count))}]]`] : []),
+      nameCell(u),
+      ...SUMMARY_STAT_KEYS.map((k) => `[#text(size: ${S.cell}pt)[${mk(statVal(chars, k) || '—')}]]`),
+      ...(showPoints ? [`[#text(size: ${S.cell}pt)[${mk(u.points != null ? String(u.points) : '—')}]]`] : []),
     ].join(', '));
     for (const s of secondary) {
       rows.push([
         ...(showCount ? ['[]'] : []),
-        `[#h(0.6em)#text(size: 6pt, fill: luma(110), style: "italic")[${mk(s.name)}]]`,
-        ...SUMMARY_STAT_KEYS.map((k) => `[#text(size: 6pt, fill: luma(110))[${mk(statVal(s.chars, k) || '—')}]]`),
+        `[#h(0.6em)#text(size: ${S.secName}pt, fill: luma(110), style: "italic")[${mk(s.name)}]]`,
+        ...SUMMARY_STAT_KEYS.map((k) => `[#text(size: ${S.secCell}pt, fill: luma(110))[${mk(statVal(s.chars, k) || '—')}]]`),
         ...(showPoints ? ['[]'] : []),
       ].join(', '));
     }
   }
+  return { meta, colSpec, alignSpec, headerRow, rows, inset: S.inset };
+}
 
-  // Chunk rows so each landscape card fits. Card content height ≈ lh mm; reserve
-  // for bleed + army header + table header + insets, ~3.4mm per data row.
-  const perCard = Math.max(4, Math.floor((lh - 20) / 3.4));
+function summaryTableExpr(model, chunk) {
+  return `table(
+      columns: (${model.colSpec.join(', ')}),
+      align: (${model.alignSpec.join(', ')}),
+      inset: (x: ${model.inset}pt, y: 1.4pt), stroke: 0.3pt + luma(215),
+      fill: (_, r) => if r != 0 and calc.odd(r) { luma(245) },
+      ${model.headerRow},
+      ${chunk.map((r) => `      ${r},`).join('\n')}
+    )`;
+}
+
+function chunkRows(rows, perCard) {
   const chunks = [];
   for (let i = 0; i < rows.length; i += perCard) chunks.push(rows.slice(i, i + perCard));
   if (!chunks.length) chunks.push([]);
+  return chunks;
+}
 
-  const cards = chunks.map((chunk) => {
-    const table = `table(
-      columns: (${colSpec.join(', ')}),
-      align: (${alignSpec.join(', ')}),
-      inset: (x: 3pt, y: 1.5pt), stroke: 0.3pt + luma(215),
-      fill: (_, r) => if r != 0 and calc.odd(r) { luma(245) },
-      ${headerRow},
-      ${chunk.map((r) => `      ${r},`).join('\n')}
-    )`;
-    return `cardframe(${lw}mm, ${lh}mm, round: ${round}, {
+// LANDSCAPE cards for the on-screen preview (width = portrait height). Overflows
+// onto extra cards; each repeats the army header.
+function summaryCardsLit(army, cw, ch, round = true, opts = {}) {
+  const lw = ch, lh = cw;
+  const model = summaryModel(army, opts, SUMMARY_SIZE.landscape);
+  const perCard = Math.max(4, Math.floor((lh - 20) / 3.4));
+  const cards = chunkRows(model.rows, perCard).map((chunk) => `cardframe(${lw}mm, ${lh}mm, round: ${round}, {
       block(width: 100%, fill: accent, inset: (x: 3mm, y: 1.6mm), {
         text(font: titlefont, fill: onaccent, weight: 700, size: 13pt, ${ts(army.meta.name)})
         linebreak()
-        text(fill: onaccent, size: 6pt, ${ts(meta)})
+        text(fill: onaccent, size: 6pt, ${ts(model.meta)})
       })
-      block(width: 100%, inset: (x: 2.5mm, top: 1.5mm, bottom: 2mm), ${table})
-    })`;
-  });
+      block(width: 100%, inset: (x: 2.5mm, top: 1.5mm, bottom: 2mm), ${summaryTableExpr(model, chunk)})
+    })`);
+  return `(${cards.join(',\n    ')}${cards.length === 1 ? ',' : ''})`;
+}
+
+// PORTRAIT cards for the imposed PDF: header banner at the top, table below —
+// same orientation as the unit cards. Overflows onto extra cards.
+function summaryPortraitCardsLit(army, cw, ch, round = false, opts = {}) {
+  const model = summaryModel(army, opts, SUMMARY_SIZE.portrait);
+  const perCard = Math.max(4, Math.floor((ch - 20) / 2.8));
+  const cards = chunkRows(model.rows, perCard).map((chunk) => `cardframe(${cw}mm, ${ch}mm, round: ${round}, {
+      block(width: 100%, fill: accent, inset: (x: 2.5mm, y: 1.3mm), {
+        text(font: titlefont, fill: onaccent, weight: 700, size: 11pt, ${ts(army.meta.name)})
+        linebreak()
+        text(fill: onaccent, size: 5pt, ${ts(model.meta)})
+      })
+      block(width: 100%, inset: (x: 1.5mm, top: 1.2mm, bottom: 1.5mm), ${summaryTableExpr(model, chunk)})
+    })`);
   return `(${cards.join(',\n    ')}${cards.length === 1 ? ',' : ''})`;
 }
 

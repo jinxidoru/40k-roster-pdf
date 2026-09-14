@@ -40,7 +40,11 @@ function isWeaponSelection(sel) {
 }
 
 function isEnhancement(sel) {
-  return (sel.categories || []).some((c) => /enhancement/i.test(c.name || ''));
+  if ((sel.categories || []).some((c) => /enhancement/i.test(c.name || ''))) return true;
+  // Some enhancements carry no "Enhancement" category but spend an "Enhancements"
+  // budget cost (e.g. the Ork "Dreadherder", which is a type:"upgrade" node) —
+  // treat those as enhancements too.
+  return (sel.costs || []).some((c) => /enhancement/i.test(c.name || '') && Number(c.value) > 0);
 }
 
 function unitPoints(sel) {

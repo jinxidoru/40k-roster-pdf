@@ -92,9 +92,23 @@ export function paletteColorFor(faction) {
   return hit ? hit.color : null;
 }
 
+// Accent resolution shared by all renderers: an explicit #hex from the color
+// option wins, else the faction's true palette color, else the readability-tuned
+// faction accent. Renderers that put white-on-accent text should pair this with
+// a contrast-aware text color (see `onaccent` in the preambles).
+export function resolveAccent(options, army) {
+  const a = options && options.accent;
+  if (typeof a === 'string' && /^#[0-9a-fA-F]{6}$/.test(a)) return a;
+  const faction = army && army.meta && army.meta.faction;
+  return paletteColorFor(faction) || accentFor(faction);
+}
+
 // --- roster/summary table helpers (shared by Standard + Cards summary) ------
 // Unit keywords worth surfacing next to the name in the roster/summary tables.
-export const SUBSET_KEYWORDS = ['infantry', 'swarm', 'beast', 'monster', 'vehicle', 'psyker'];
+export const SUBSET_KEYWORDS = [
+  'infantry', 'swarm', 'beast', 'monster', 'vehicle', 'psyker',
+  'character', 'fly', 'titanic', 'mounted',
+];
 export function subsetKeywords(keywords) {
   const seen = new Set();
   const out = [];
