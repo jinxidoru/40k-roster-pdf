@@ -3,7 +3,7 @@
 // as many cards as its content needs), a unit-view extractor, and the five
 // style variants. Pure/browser-safe — everything returns Typst source strings.
 
-import { accentFor, clean, formatKeywords, ts, mk, statVal } from './shared.js';
+import { accentFor, paletteColorFor, clean, formatKeywords, ts, mk, statVal } from './shared.js';
 
 // Card sizes in millimetres. Standard = Magic/Poker (63×88mm ≈ 2.5×3.5in).
 // Add more entries later (Bridge 57×89, Tarot 70×120, …) — the option is built
@@ -17,7 +17,7 @@ export const CARD_SIZES = {
 export function resolveAccent(options, army) {
   const a = options && options.accent;
   if (typeof a === 'string' && /^#[0-9a-fA-F]{6}$/.test(a)) return a;
-  return accentFor(army.meta.faction);
+  return paletteColorFor(army.meta.faction) || accentFor(army.meta.faction);
 }
 
 // The main (bulk) profile — matches the unit name, else the first profile.
@@ -94,6 +94,14 @@ export function preamble(accent, titlefont = 'Anton') {
 #let band = luma(238)
 // Title/display font (chosen per style).
 #let titlefont = "${titlefont}"
+// Width of the full-bleed colored border around each card.
+#let cardbleed = 1.25mm
+// Readable text color on the accent: dark on light accents (e.g. yellow), else white.
+#let onaccent = {
+  let c = accent.components()
+  let lum = 0.299 * (c.at(0) / 100%) + 0.587 * (c.at(1) / 100%) + 0.114 * (c.at(2) / 100%)
+  if lum > 0.62 { rgb("#1a1a1a") } else { white }
+}
 #set text(font: ("Arimo", "Helvetica Neue", "Arial"), fill: ink, size: 7.4pt)
 #set par(leading: 0.4em)
 
@@ -124,7 +132,7 @@ export function preamble(accent, titlefont = 'Anton') {
 #let railcell(label, val) = box(width: 100%, radius: 1mm, clip: true, stroke: 0.5pt + accent,
   stack(dir: ttb, spacing: 0pt,
     block(width: 100%, fill: accent, inset: (y: 0.5mm),
-      align(center, text(fill: white, weight: "bold", size: 4.6pt, tracking: 0.3pt, upper(label)))),
+      align(center, text(fill: onaccent, weight: "bold", size: 4.6pt, tracking: 0.3pt, upper(label)))),
     block(width: 100%, fill: white, inset: (top: 0.4mm, bottom: 0.6mm),
       align(center, text(fill: ink, font: titlefont, weight: 700, size: 12pt, val)))))
 
@@ -149,11 +157,11 @@ export function preamble(accent, titlefont = 'Anton') {
 }
 
 // Invuln stat: an "INV" label strip (matching the stat boxes) above the shield.
-#let invcell(val) = align(center, stack(dir: ttb, spacing: 0.6mm,
-  box(fill: accent, radius: 1mm, inset: (x: 2.2mm, y: 0.5mm),
-    text(fill: white, weight: "bold", size: 4.6pt, tracking: 0.3pt, "INV")),
+#let invcell(val) = align(center, box(width: 8.5mm, stack(dir: ttb, spacing: 0pt,
+  block(width: 100%, fill: accent, radius: (top: 1mm), inset: (y: 0.5mm),
+    align(center, text(fill: onaccent, weight: "bold", size: 4.6pt, tracking: 0.3pt, "INV"))),
   shield(val),
-))
+)))
 
 // Keyword chips.
 #let chip(t) = box(fill: band, inset: (x: 3pt, y: 1pt), radius: 2pt, text(size: 5.6pt, fill: luma(60), t))
@@ -169,7 +177,7 @@ export function preamble(accent, titlefont = 'Anton') {
 // A weapon row (two lines): kind tag + name + keywords on line 1, the stat line
 // (range/attacks/skill/S/AP/D) indented beneath.
 #let wkind(k) = box(width: 8pt, height: 8pt, radius: 50%, fill: if k == "R" { accent } else { luma(90) },
-  align(center + horizon, text(fill: white, size: 5pt, weight: "bold", k)))
+  align(center + horizon, text(fill: if k == "R" { onaccent } else { white }, size: 5pt, weight: "bold", k)))
 #let statcell(lbl, v) = box[#text(size: 5pt, fill: faint, weight: "bold", lbl) #text(size: 6.2pt, v)]
 #let wrow(k, name, rng, a, sk, s, ap, d, kw) = block(width: 100%, inset: (y: 1.4pt))[
   #grid(columns: (auto, 1fr), column-gutter: 3pt, align: horizon,
@@ -196,15 +204,15 @@ export function preamble(accent, titlefont = 'Anton') {
   let cells = ()
   for (i, v) in vals.enumerate() {
     if i > 0 { cols.push(auto); cells.push(align(center + horizon, text(size: 6.2pt, fill: luma(195))[|])) }
-    cols.push(1fr); cells.push(align(center + horizon, text(size: 6.6pt, fill: luma(70), v)))
+    cols.push(1fr); cells.push(align(center + horizon, text(size: 6.6pt, fill: ink, v)))
   }
   grid(columns: cols, ..cells)
 }
 // Weapon body: name, then the equal-width stat line, then keywords.
-#let wbody(name, rng, a, sk, s, ap, d, kw) = stack(dir: ttb, spacing: 1.6pt,
+#let wbody(name, rng, a, sk, s, ap, d, kw) = stack(dir: ttb, spacing: 2.4pt,
   text(weight: "bold", size: 7pt, name),
   statline(rng, a, sk, s, ap, d),
-  ..(if kw != "" { (text(size: 5.7pt, fill: luma(110), kw),) } else { () }),
+  ..(if kw != "" { (text(size: 5.7pt, fill: luma(70), kw),) } else { () }),
 )
 // Flush: name flush left, no kind marker.
 #let wrowflush(k, name, rng, a, sk, s, ap, d, kw) = block(width: 100%, inset: (y: 1.8pt),
@@ -217,7 +225,7 @@ export function preamble(accent, titlefont = 'Anton') {
 // Full-bleed title bar (no radius — the card clips the corners). The unit name
 // uses Oswald, a condensed display sans that fits long names.
 #let titlebar(name, sz) = block(width: 100%, fill: accent, inset: (x: 2.5mm, y: 1.5mm),
-  text(font: titlefont, fill: white, weight: 700, size: sz + 1pt, name))
+  text(font: titlefont, fill: onaccent, weight: 700, size: sz + 1pt, name))
 
 // Full-bleed keyword band: neutral grey (same for every faction), black caps.
 #let kwband(txt) = block(width: 100%, fill: luma(230), inset: (x: 2.5mm, y: 1mm),
@@ -225,8 +233,11 @@ export function preamble(accent, titlefont = 'Anton') {
 
 // Thin full-bleed accent border around the whole card so an imprecise cut still
 // leaves a clean colored edge. Content lives in the inner white area.
-#let cardframe(cw, ch, body, bleed: 1mm) = box(width: cw, height: ch, radius: 2mm, fill: accent, clip: true, inset: bleed,
-  box(width: 100%, height: 100%, radius: 1mm, clip: true, fill: white, stroke: none, body))
+// round: rounded outer corners (preview) vs square (PDF, for clean cutting).
+// The inner box is square so the title bar meets the border with no white seam.
+#let cardframe(cw, ch, body, round: true) = box(width: cw, height: ch,
+  radius: (if round { 2mm } else { 0mm }), fill: accent, clip: true, inset: cardbleed,
+  box(width: 100%, height: 100%, radius: 0mm, clip: true, fill: white, stroke: none, body))
 
 // An ability paragraph.
 #let abil(name, body) = block(width: 100%, inset: (y: 1pt), text(size: 6.6pt)[#text(weight: "bold", name)#if body != "" [ — #body]])
@@ -264,12 +275,12 @@ export function preamble(accent, titlefont = 'Anton') {
 // (stack the array) and the PDF (concatenate arrays across units, then tile).
 //   u: (title: str, keywords: str, rail: ((label, val)...), invuln: str | none,
 //       blocks: (content...))
-#let makecards(u, cw, ch) = {
+#let makecards(u, cw, ch, round: true, invBottom: false) = {
   let ipad = 2.6mm
   let railW = 10mm
   let gap = 2pt
-  let innerW = cw - 2mm
-  let innerH = ch - 2mm
+  let innerW = cw - 2 * cardbleed
+  let innerH = ch - 2 * cardbleed
   let header = stack(spacing: 0pt, titlebar(u.title, 10pt),
     ..(if u.keywords != "" { (kwband(u.keywords),) } else { () }))
   let headerH = measure(box(width: innerW, header)).height
@@ -285,19 +296,24 @@ export function preamble(accent, titlefont = 'Anton') {
   }
   if cur.len() > 0 or cards.len() == 0 { cards.push(cur) }
   let railitems = u.rail.map(p => railcell(p.at(0), p.at(1)))
-  if u.invuln != none { railitems.push(invcell(u.invuln)) }
+  if u.invuln != none {
+    if invBottom { railitems.push(invcell(u.invuln)) } else {
+      let svi = u.rail.position(p => p.at(0) == "Sv")
+      railitems.insert(if svi == none { railitems.len() } else { svi + 1 }, invcell(u.invuln))
+    }
+  }
   let rail = box(width: railW, height: 100%, inset: (left: 1.3mm, right: 0.3mm, top: 1mm, bottom: 1mm),
     align(top, stack(dir: ttb, spacing: 1.6mm, ..railitems)))
   let n = cards.len()
   cards.enumerate().map(pair => {
     let i = pair.at(0)
     let bodyblock = block(width: 100%, inset: (x: ipad, top: 0.8mm, bottom: ipad), stack(spacing: gap, ..pair.at(1)))
-    cardframe(cw, ch, {
+    cardframe(cw, ch, round: round, {
       grid(rows: (auto, 1fr),
         header,
         if i == 0 { grid(columns: (railW, 1fr), rail, bodyblock) } else { bodyblock },
       )
-      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: white, weight: "bold", str(i + 1) + "/" + str(n)))) }
+      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: onaccent, weight: "bold", str(i + 1) + "/" + str(n)))) }
     })
   })
 }
@@ -350,7 +366,7 @@ const fbFrame = (pad = 'pad') => `(i, n, header, body) => {
     cardframe(cardW, cardH, {
       if header != none { header }
       block(width: 100%, inset: (x: ${pad}, top: 0.8mm, bottom: ${pad}), body)
-      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: white, weight: "bold", str(i + 1) + "/" + str(n)))) }
+      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: onaccent, weight: "bold", str(i + 1) + "/" + str(n)))) }
     })
     v(3.5mm)
   }`;
@@ -482,7 +498,7 @@ function s6(view, w, h, blocksLit) {
       if header != none { header }
       block(width: 100%, inset: (x: pad, top: 0.8mm), body)
       if i == 0 { place(bottom, footer) }
-      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: white, weight: "bold", str(i + 1) + "/" + str(n)))) }
+      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: onaccent, weight: "bold", str(i + 1) + "/" + str(n)))) }
     })
     v(3.5mm)
   }
@@ -523,7 +539,7 @@ function s7(view, w, h, blocksLit, opts = {}) {
           )
         } else { bodyblock },
       )
-      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: white, weight: "bold", str(i + 1) + "/" + str(n)))) }
+      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: onaccent, weight: "bold", str(i + 1) + "/" + str(n)))) }
     })
     v(3.5mm)
   }
@@ -567,37 +583,48 @@ function unitDict(view) {
   return `(title: ${ts(view.title)}, keywords: ${ts(view.keywords)}, rail: ${rail}, invuln: ${view.invuln ? ts(view.invuln) : 'none'}, blocks: ${bodyBlocks(view, 'wrowtag', 'caps')})`;
 }
 
-// One unit's cards, stacked on an auto-height page — for the per-card preview.
-export function previewUnitDoc(view, sizeKey, accentHex) {
+// One unit's cards, stacked on an auto-height page — for the per-card preview
+// (rounded corners).
+export function previewUnitDoc(view, sizeKey, accentHex, opts = {}) {
   const { w, h } = CARD_SIZES[sizeKey] || CARD_SIZES.standard;
+  const inv = opts.invBottom ? 'true' : 'false';
   return `${preamble(accentHex, 'Anton')}
 #set page(width: ${w + 8}mm, height: auto, margin: 4mm)
 #context {
-  stack(dir: ttb, spacing: 4mm, ..makecards(${unitDict(view)}, ${w}mm, ${h}mm))
+  stack(dir: ttb, spacing: 4mm, ..makecards(${unitDict(view)}, ${w}mm, ${h}mm, round: true, invBottom: ${inv}))
 }
 `;
 }
 
 // Selected units' cards imposed onto the print sheet: uniform butt-cut grid,
 // centered, with short cut ticks in the outer margins at each gridline.
-export function imposeDoc(views, sizeKey, paperKey, accentHex) {
+export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   const { w, h } = CARD_SIZES[sizeKey] || CARD_SIZES.standard;
   const [pw, ph] = PAPER_MM[paperKey] || PAPER_MM['us-letter'];
   const units = views.map(unitDict).join(',\n    ');
+  const inv = opts.invBottom ? 'true' : 'false';
+  const copies = opts.summaryCopies || 0;
+  const hasUnits = views.length > 0;
+  let summaryPages = '';
+  if (opts.army && copies > 0) {
+    const card = summaryCard(opts.army, w, h, false); // square corners in the PDF
+    summaryPages = Array.from({ length: copies }, () => `#place(center + horizon, ${card})`).join('\n#pagebreak()\n');
+    summaryPages += hasUnits ? '\n#pagebreak()\n' : '\n';
+  }
   return `${preamble(accentHex, 'Anton')}
 #set page(width: ${pw}mm, height: ${ph}mm, margin: 0pt)
-#context {
+${summaryPages}#context {
   let cw = ${w}mm
   let ch = ${h}mm
   let all = ()
-  for u in (${units}) { all = all + makecards(u, cw, ch) }
+  for u in (${units}) { all = all + makecards(u, cw, ch, round: false, invBottom: ${inv}) }
   let cols = calc.max(1, calc.floor(${pw}mm / cw))
   let rows = calc.max(1, calc.floor(${ph}mm / ch))
   let per = cols * rows
   let mx = (${pw}mm - cols * cw) / 2
   let my = (${ph}mm - rows * ch) / 2
   let tick = 0.3pt + accent
-  let pages = calc.max(1, calc.ceil(all.len() / per))
+  let pages = calc.ceil(all.len() / per)
   for p in range(pages) {
     let chunk = all.slice(p * per, calc.min((p + 1) * per, all.len()))
     place(top + left, dx: mx, dy: my,
@@ -621,4 +648,55 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex) {
 // Units for the selection UI.
 export function unitList(army) {
   return army.units.map((u, i) => ({ index: i, name: u.count > 1 ? `${u.name} ×${u.count}` : u.name }));
+}
+
+// --- army summary card (landscape) -----------------------------------------
+// A single landscape card: army header + a compact stat table of every unit.
+// Landscape = the card rotated, so its width is the portrait height (ch).
+function summaryCard(army, cw, ch, round = true) {
+  const lw = ch; // landscape width
+  const lh = cw; // landscape height
+  const meta = [
+    army.meta.faction, army.meta.detachment, army.meta.battleSize,
+    army.meta.points != null ? `${army.meta.points} pts` : '',
+    `${army.units.length} datasheets`,
+  ].filter(Boolean).join('  ·  ');
+  const cols = ['Unit', 'M', 'T', 'Sv', 'W', 'Ld', 'OC', 'Pts'];
+  const header = cols
+    .map((c) => `table.cell(fill: accent)[#text(fill: onaccent, weight: "bold", size: 5.5pt)[${mk(c)}]]`)
+    .join(', ');
+  const rows = army.units.map((u) => {
+    const c = mainProfile(u);
+    const nm = u.count > 1 ? `${u.name} ×${u.count}` : u.name;
+    const vals = [nm, statVal(c, 'M'), statVal(c, 'T'), statVal(c, 'Sv'),
+      statVal(c, 'W'), statVal(c, 'LD'), statVal(c, 'OC'), (u.points != null ? String(u.points) : '—')];
+    return vals
+      .map((v, i) => `[#text(size: 6.2pt${i === 0 ? ', weight: "bold"' : ''})[${mk(v || '—')}]]`)
+      .join(', ');
+  });
+  const table = `table(
+    columns: (1fr, auto, auto, auto, auto, auto, auto, auto),
+    align: (left, center, center, center, center, center, center, center),
+    inset: (x: 3pt, y: 1.5pt), stroke: 0.3pt + luma(215),
+    fill: (_, r) => if r != 0 and calc.odd(r) { luma(245) },
+    ${header},
+    ${rows.map((r) => `    ${r},`).join('\n')}
+  )`;
+  return `cardframe(${lw}mm, ${lh}mm, round: ${round}, {
+    block(width: 100%, fill: accent, inset: (x: 3mm, y: 1.6mm), {
+      text(font: titlefont, fill: onaccent, weight: 700, size: 13pt, ${ts(army.meta.name)})
+      linebreak()
+      text(fill: onaccent, size: 6pt, ${ts(meta)})
+    })
+    block(width: 100%, inset: (x: 2.5mm, top: 1.5mm, bottom: 2mm), ${table})
+  })`;
+}
+
+// Standalone preview doc for the summary card.
+export function summaryCardDoc(army, sizeKey, accentHex) {
+  const { w, h } = CARD_SIZES[sizeKey] || CARD_SIZES.standard;
+  return `${preamble(accentHex, 'Anton')}
+#set page(width: ${h + 8}mm, height: auto, margin: 4mm)
+#${summaryCard(army, w, h, true)}
+`;
 }

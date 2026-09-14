@@ -40,6 +40,58 @@ export function accentFor(faction) {
   return DEFAULT_ACCENT;
 }
 
+// A palette of faction / sub-faction "true" colors for the card color picker.
+// Cards use contrast-aware text, so light colors (e.g. Imperial Fists yellow)
+// stay readable — unlike accentFor(), which is tuned for white-on-color headers.
+// Ordered for the dropdown; longer/more-specific names first so substring
+// matching prefers a chapter over its parent.
+export const FACTION_PALETTE = [
+  { name: 'Ultramarines', color: '#0d407f' },
+  { name: 'Imperial Fists', color: '#f0c018' },
+  { name: 'Crimson Fists', color: '#2b3a6b' },
+  { name: 'Blood Angels', color: '#9a1115' },
+  { name: 'Dark Angels', color: '#14432a' },
+  { name: 'Space Wolves', color: '#5f7686' },
+  { name: 'Salamanders', color: '#1c5b3a' },
+  { name: 'Raven Guard', color: '#20242a' },
+  { name: 'White Scars', color: '#c9ccce' },
+  { name: 'Iron Hands', color: '#2b2f33' },
+  { name: 'Black Templars', color: '#141414' },
+  { name: 'Deathwatch', color: '#26292e' },
+  { name: 'Grey Knights', color: '#49585f' },
+  { name: 'Adeptus Custodes', color: '#b8912b' },
+  { name: 'Adepta Sororitas', color: '#6b1f2b' },
+  { name: 'Astra Militarum', color: '#4a5230' },
+  { name: 'Adeptus Mechanicus', color: '#7a1f1f' },
+  { name: 'Imperial Knights', color: '#3a3f57' },
+  { name: 'Space Marines', color: '#0d407f' },
+  { name: 'Death Guard', color: '#6b6f39' },
+  { name: 'Thousand Sons', color: '#1f6b6b' },
+  { name: "World Eaters", color: '#8a1a1a' },
+  { name: "Emperor's Children", color: '#7a2b6b' },
+  { name: 'Word Bearers', color: '#6b1f1f' },
+  { name: 'Black Legion', color: '#1a1a1a' },
+  { name: 'Chaos Knights', color: '#2b2b3a' },
+  { name: 'Chaos Space Marines', color: '#3f2b2b' },
+  { name: 'Chaos Daemons', color: '#5a2b2b' },
+  { name: 'Orks', color: '#4c7a2c' },
+  { name: 'Drukhari', color: '#3a2b4f' },
+  { name: 'Aeldari', color: '#2b6b8f' },
+  { name: 'Ynnari', color: '#4a2b5a' },
+  { name: 'Necrons', color: '#2f6b4f' },
+  { name: 'Tyranids', color: '#5a2b6b' },
+  { name: 'Genestealer Cults', color: '#6b2b5a' },
+  { name: "T'au Empire", color: '#8a5a1f' },
+  { name: 'Leagues of Votann', color: '#7a5a1f' },
+];
+
+// The true palette color for a faction (substring match), or null if unknown.
+export function paletteColorFor(faction) {
+  const f = (faction || '').toLowerCase();
+  const hit = FACTION_PALETTE.find((e) => f.includes(e.name.toLowerCase()));
+  return hit ? hit.color : null;
+}
+
 // Clean rules/ability text: drop nbsp, strip the dataset's **/^^ markup, strip
 // wrapping quotes, collapse whitespace.
 export function clean(s) {

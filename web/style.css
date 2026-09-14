@@ -154,6 +154,7 @@ select {
 /* Per-card preview: a grid of individual cards, each with a select checkbox. */
 #viewer.cards { display: flex; flex-wrap: wrap; gap: 16px; align-content: flex-start; }
 .card-item { display: flex; flex-direction: column; gap: 5px; width: 200px; }
+.card-item.summary { width: 320px; } /* landscape summary card is wider */
 .card-item.unchecked { opacity: .4; }
 .card-check { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .card-check input { cursor: pointer; }
@@ -163,6 +164,11 @@ select {
 
 /* Text button (Select/Unselect all) — same box as .btn but with a label. */
 .text-btn { font: inherit; font-size: 12px; font-weight: 600; padding: 6px 10px; }
+
+/* Color option: faction/recent dropdown + native custom picker. */
+.color-control { display: flex; align-items: center; gap: 6px; }
+.color-control select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; max-width: 160px; }
+.color-swatch { width: 28px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
 
 /* Off-screen iframe that holds the PDF purely so Print can drive it. */
 #print-frame { position: fixed; left: -9999px; width: 1px; height: 1px; border: 0; }

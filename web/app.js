@@ -5,6 +5,7 @@
 
 import { parseRoster, isNewRecruitRoster } from '../src/parse.js';
 import { renderers, byId, defaultRenderer } from '../src/render.js';
+import { FACTION_PALETTE } from '../src/renderers/shared.js';
 
 const TYPST_VERSION = '0.7.0';
 const CDN = `https://cdn.jsdelivr.net/npm`;
@@ -234,10 +235,66 @@ function buildOptions() {
         regenerate();
       });
       row.appendChild(cb);
+    } else if (opt.type === 'color') {
+      row.appendChild(colorControl(opt, id, val));
     }
-    // future option types (number/color) get their controls here
+    // future option types (number/…) get their controls here
     els.options.appendChild(row);
   }
+}
+
+const RECENT_COLORS_KEY = '40k-roster-pdf/recent-colors';
+function loadRecentColors() {
+  try { return JSON.parse(localStorage.getItem(RECENT_COLORS_KEY)) || []; } catch { return []; }
+}
+function addRecentColor(hex) {
+  hex = String(hex).toLowerCase();
+  const list = [hex, ...loadRecentColors().filter((c) => c.toLowerCase() !== hex)].slice(0, 5);
+  try { localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+}
+
+// Color option: a dropdown of Default / recent colors / faction palette, plus a
+// native picker for a custom color. Value is 'faction' or a #hex.
+function colorControl(opt, id, val) {
+  const wrap = document.createElement('div');
+  wrap.className = 'color-control';
+  const sel = document.createElement('select');
+  sel.id = id;
+  const addOpt = (value, label, parent = sel) => {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = label; parent.appendChild(o);
+  };
+  addOpt('faction', 'Default (faction)');
+  const isHex = /^#[0-9a-fA-F]{6}$/.test(val);
+  const recents = loadRecentColors();
+  if (recents.length) {
+    const g = document.createElement('optgroup'); g.label = 'Recent';
+    recents.forEach((hex) => addOpt(hex, hex, g));
+    sel.appendChild(g);
+  }
+  const g2 = document.createElement('optgroup'); g2.label = 'Factions';
+  FACTION_PALETTE.forEach((e) => addOpt(e.color, e.name, g2));
+  sel.appendChild(g2);
+  addOpt('__custom__', 'Custom…');
+  const has = (v) => [...sel.querySelectorAll('option')].some((o) => o.value.toLowerCase() === String(v).toLowerCase());
+  if (isHex && !has(val)) {
+    const o = document.createElement('option'); o.value = val; o.textContent = `Custom (${val})`;
+    sel.insertBefore(o, sel.children[1] || null);
+  }
+  sel.value = isHex ? val : 'faction';
+  const picker = document.createElement('input');
+  picker.type = 'color';
+  picker.className = 'color-swatch';
+  picker.title = 'Custom color';
+  picker.value = isHex ? val : '#c8102e';
+  const apply = (v) => { settings.options[opt.key] = v; saveSettings(); regenerate(); };
+  sel.addEventListener('change', () => {
+    if (sel.value === '__custom__') { picker.click(); return; }
+    apply(sel.value);
+  });
+  picker.addEventListener('change', () => { addRecentColor(picker.value); apply(picker.value); buildOptions(); });
+  wrap.append(sel, picker);
+  return wrap;
 }
 
 // --- file intake -----------------------------------------------------------
@@ -392,6 +449,25 @@ function renderCards(token) {
   els.download.hidden = false;
   els.print.hidden = false;
   setStatus('');
+  // Optional army-summary card at the top (controlled by an option, no checkbox).
+  if (currentRenderer.summaryDoc) {
+    const sdoc = currentRenderer.summaryDoc(army, currentOptions);
+    if (sdoc) {
+      const item = document.createElement('div');
+      item.className = 'card-item summary';
+      const nm = document.createElement('div');
+      nm.className = 'card-name';
+      nm.textContent = 'Army summary';
+      const out = document.createElement('div');
+      out.className = 'card-out';
+      out.textContent = '…';
+      item.append(nm, out);
+      els.viewer.appendChild(item);
+      renderSvg(sdoc)
+        .then((svg) => { if (token === previewToken) out.innerHTML = svg; })
+        .catch((err) => { out.innerHTML = `<pre class="err">${err.message || err}</pre>`; });
+    }
+  }
   for (const { index, name } of units) {
     const item = document.createElement('div');
     item.className = 'card-item';
