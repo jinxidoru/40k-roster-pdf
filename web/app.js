@@ -356,9 +356,19 @@ function loadRoster(json) {
 // Dev-only convenience: ?preload=<name> auto-loads staging/<name> so testing
 // doesn't require dropping a file each reload. Localhost only — staging/ is
 // gitignored and never deployed, so this is inert on the live site.
+// "Dev host" = localhost or a private-LAN address (so ?preload works when
+// testing from another device on the network via the machine's 192.168.x /
+// 10.x / 172.16–31.x IP). Public production hosts never match, and staging/ is
+// gitignored + never deployed, so preload stays inert on the live site either way.
 function isLocalhost() {
   const h = location.hostname;
-  return /^(localhost|127\.|0\.0\.0\.0|::1|\[::1\])/.test(h) || h.endsWith('.local');
+  return (
+    /^(localhost|127\.|0\.0\.0\.0|::1|\[::1\])/.test(h) ||
+    /^10\./.test(h) ||
+    /^192\.168\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
+    h.endsWith('.local')
+  );
 }
 // Load the bundled core-keyword definitions. Absent file (removed on purpose)
 // or any error → coreGlossary stays {} and the glossary quietly falls back to
