@@ -143,13 +143,27 @@ select {
   font-size: 10px; font-weight: 700; color: var(--accent);
   background: var(--bg); padding: 0 5px;
 }
-/* Typst emits one SVG per page; scale each to the container width and stack
-   them with a gap, like a paged document. */
-#viewer svg {
+/* Single-doc preview: Typst emits one SVG per page; scale each to the container
+   width and stack them, like a paged document. */
+#viewer:not(.cards) svg {
   display: block; width: 100%; height: auto; margin: 0 auto 12px;
   background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .15);
 }
-#viewer svg:last-child { margin-bottom: 0; }
+#viewer:not(.cards) svg:last-child { margin-bottom: 0; }
+
+/* Per-card preview: a grid of individual cards, each with a select checkbox. */
+#viewer.cards { display: flex; flex-wrap: wrap; gap: 16px; align-content: flex-start; }
+.card-item { display: flex; flex-direction: column; gap: 5px; width: 200px; }
+.card-item.unchecked { opacity: .4; }
+.card-check { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.card-check input { cursor: pointer; }
+.card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-out svg { display: block; width: 100%; height: auto; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .15); }
+.card-out .err { color: var(--accent); font-size: 10px; white-space: pre-wrap; }
+
+/* Text button (Select/Unselect all) — same box as .btn but with a label. */
+.text-btn { font: inherit; font-size: 12px; font-weight: 600; padding: 6px 10px; }
+
 /* Off-screen iframe that holds the PDF purely so Print can drive it. */
 #print-frame { position: fixed; left: -9999px; width: 1px; height: 1px; border: 0; }
 

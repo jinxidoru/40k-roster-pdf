@@ -23,9 +23,13 @@ match the faction.
 Sheets are produced by named *renderers*, each with its own layout (and, later, its own
 options). Today:
 
-- **Standard** — the whole army as dense reference tables on US Letter.
+- **Standard** — the whole army as dense reference tables on US Letter or A4.
+- **Cards** — one printable card per unit (Magic/Poker or Tarot size). The preview shows
+  individual cards with a checkbox each; the PDF imposes the selected cards onto the page
+  (US Letter / A4) in a butt-cut grid with margin cut ticks. Titles use the
+  [Anton](https://fonts.google.com/specimen/Anton) font (SIL Open Font License).
 
-More styles (cards, A4, …) can be added without touching the rest.
+More styles can be added without touching the rest.
 
 ## Command line
 

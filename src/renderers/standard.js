@@ -235,11 +235,11 @@ function bool(v, def) {
   return v === true || v === 'true';
 }
 
-// Keyword-glossary mode: 'none' | 'show' | 'separate'. Accepts a legacy boolean
-// (true -> 'show') so older persisted/CLI values still work.
+// Keyword-glossary mode: 'none' | 'include' | 'separate'. Accepts legacy values
+// (true / 'show' -> 'include') so older persisted/CLI values still work.
 function glossaryMode(v) {
-  if (v === 'show' || v === 'separate') return v;
-  if (v === true || v === 'true') return 'show';
+  if (v === 'include' || v === 'separate') return v;
+  if (v === 'show' || v === true || v === 'true') return 'include';
   return 'none';
 }
 
@@ -399,10 +399,10 @@ export default {
       label: 'Keyword glossary',
       type: 'select',
       default: 'none',
-      help: 'A section defining every referenced weapon/core keyword the roster export includes rules text for (keywords it doesn’t define, e.g. Lethal Hits, are only counted in a footnote). “Show” appends it after the army rules; “Separate page” starts it on a fresh page.',
+      help: 'A section defining every referenced weapon/core keyword the roster export includes rules text for (keywords it doesn’t define, e.g. Lethal Hits, are only counted in a footnote). “Include” appends it after the army rules; “Separate page” starts it on a fresh page.',
       choices: [
         { value: 'none', label: 'None' },
-        { value: 'show', label: 'Show' },
+        { value: 'include', label: 'Include' },
         { value: 'separate', label: 'Separate page' },
       ],
     },

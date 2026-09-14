@@ -12,7 +12,7 @@ const WASM = {
   compiler: `${CDN}/@myriaddreamin/typst-ts-web-compiler@${TYPST_VERSION}/pkg/typst_ts_web_compiler_bg.wasm`,
   renderer: `${CDN}/@myriaddreamin/typst-ts-renderer@${TYPST_VERSION}/pkg/typst_ts_renderer_bg.wasm`,
 };
-const FONTS = ['Arimo-Regular.ttf', 'Arimo-Bold.ttf', 'Arimo-Italic.ttf', 'Arimo-BoldItalic.ttf']
+const FONTS = ['Arimo-Regular.ttf', 'Arimo-Bold.ttf', 'Arimo-Italic.ttf', 'Arimo-BoldItalic.ttf', 'Anton.ttf']
   .map((f) => new URL(`assets/fonts/${f}`, document.baseURI).href);
 const LS_KEY = '40k-roster-pdf/settings';
 
@@ -21,8 +21,24 @@ const els = {
   loading: $('loading'), app: $('app'), drop: $('drop'), file: $('file'), pick: $('pick'),
   renderer: $('renderer'), renderOptions: $('render-options'), options: $('options'), status: $('status'),
   summary: $('summary'), print: $('print'), download: $('download'),
-  viewer: $('viewer'), printFrame: $('print-frame'),
+  viewer: $('viewer'), printFrame: $('print-frame'), selectAll: $('select-all'),
 };
+
+// Select/unselect all cards (per-card renderers only).
+els.selectAll.addEventListener('click', () => {
+  if (!currentRenderer || !currentRenderer.perCardPreview) return;
+  const units = currentRenderer.unitList(army);
+  const allSelected = units.every((u) => cardSelection.has(u.index));
+  cardSelection.clear();
+  if (!allSelected) units.forEach((u) => cardSelection.add(u.index));
+  els.viewer.querySelectorAll('.card-item').forEach((item) => {
+    const cb = item.querySelector('input');
+    cb.checked = cardSelection.has(Number(cb.dataset.idx));
+    item.classList.toggle('unchecked', !cb.checked);
+  });
+  syncSelectAllLabel();
+  invalidatePdf();
+});
 
 // Preview is SVG (fast). The PDF is compiled lazily — only when the user
 // actually downloads or prints — so toggling options only pays for the SVG.
@@ -68,19 +84,47 @@ let worker = null;
 let ready = false;
 let army = null;
 let coreGlossary = {}; // bundled core-keyword definitions; {} if src/keywords.json is absent
-let latestId = 0; // newest render request; older worker results are ignored
-let currentContent = ''; // Typst source of the current preview (for lazy PDF)
-let pdfUrl = null; // cached PDF blob URL for currentContent, or null if stale
-let pdfReqId = 0; // id space for on-demand PDF requests
-const pdfWaiters = new Map(); // pdfReqId -> { resolve, reject }
+let currentRenderer = null;
+let currentOptions = {};
+let previewToken = 0; // supersedes stale single-preview renders
+const cardSelection = new Set(); // selected unit indices (perCardPreview renderers)
+let currentContent = ''; // Typst source of the single-doc preview (non-card renderers)
+let pdfUrl = null; // cached PDF blob URL, or null if stale
+let reqId = 0; // shared id space for render + pdf worker requests
+const renderWaiters = new Map(); // id -> { resolve, reject } for render -> svg
+const pdfWaiters = new Map(); // id -> { resolve, reject } for pdf -> bytes
 
-// Compile (or reuse) the PDF for the currently-previewed sheet, on demand.
+// Send Typst source to the worker; resolves with the rendered SVG string.
+function renderSvg(mainContent) {
+  const id = ++reqId;
+  return new Promise((resolve, reject) => {
+    renderWaiters.set(id, { resolve, reject });
+    worker.postMessage({ type: 'render', id, mainContent });
+  });
+}
+
+function invalidatePdf() {
+  if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
+}
+
+// Compile (or reuse) the print PDF on demand. For per-card renderers this
+// imposes only the selected cards.
 function ensurePdf() {
   if (pdfUrl) return Promise.resolve(pdfUrl);
-  const id = ++pdfReqId;
+  let printContent;
+  try {
+    const opts = { ...currentOptions };
+    if (currentRenderer && currentRenderer.perCardPreview) {
+      opts.selected = [...cardSelection].sort((a, b) => a - b);
+    }
+    printContent = currentRenderer.render(army, opts, 'print');
+  } catch (err) {
+    return Promise.reject(err);
+  }
+  const id = ++reqId;
   return new Promise((resolve, reject) => {
     pdfWaiters.set(id, { resolve, reject });
-    worker.postMessage({ type: 'pdf', id, mainContent: currentContent });
+    worker.postMessage({ type: 'pdf', id, mainContent: printContent });
   }).then((bytes) => {
     pdfUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     return pdfUrl;
@@ -224,6 +268,8 @@ function loadRoster(json) {
   }
   army = parseRoster(json);
   army.coreGlossary = coreGlossary;
+  cardSelection.clear();
+  army.units.forEach((_u, i) => cardSelection.add(i)); // default: all cards selected
   els.renderOptions.hidden = false;
   els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
   // One anonymous event per loaded roster (not per re-render), plus the faction.
@@ -288,19 +334,15 @@ function initEngine() {
         if (w) { pdfWaiters.delete(m.id); w.reject(new Error(m.message)); }
         return;
       }
-      if (m.id !== latestId) return; // a newer request superseded this result
       if (m.type === 'result') {
-        // SVG preview — swap content in place, preserving scroll position so
-        // toggling options doesn't jump you back to the top.
-        const y = els.viewer.scrollTop;
-        els.viewer.innerHTML = m.svg;
-        markPageBreaks();
-        els.viewer.scrollTop = y;
-        els.download.hidden = false;
-        els.print.hidden = false;
-        setStatus('');
-      } else if (m.type === 'error') {
-        setStatus(`Failed to render sheet: ${m.message}`, true);
+        const w = renderWaiters.get(m.id);
+        if (w) { renderWaiters.delete(m.id); w.resolve(m.svg); }
+        return;
+      }
+      if (m.type === 'error') {
+        const w = renderWaiters.get(m.id);
+        if (w) { renderWaiters.delete(m.id); w.reject(new Error(m.message)); }
+        return;
       }
     };
     worker.postMessage({ type: 'init', modules: MODULES, fonts: FONTS, wasm: WASM });
@@ -308,22 +350,83 @@ function initEngine() {
 }
 
 // Rendering the Typst source is cheap (main thread); the compile runs in the
-// worker. Each request bumps latestId so an in-flight render is superseded.
+// worker. previewToken supersedes stale single-preview renders.
 function regenerate() {
   if (!army || !ready) return;
-  const renderer = byId[els.renderer.value] || defaultRenderer;
+  currentRenderer = byId[els.renderer.value] || defaultRenderer;
+  currentOptions = { ...settings.options };
+  invalidatePdf();
+  const token = ++previewToken;
+  if (currentRenderer.perCardPreview) renderCards(token);
+  else renderSingle(token);
+}
+
+// Single-document preview (Standard): one SVG filling the viewer.
+function renderSingle(token) {
+  els.selectAll.hidden = true;
+  els.viewer.classList.remove('cards');
   let mainContent;
-  try {
-    mainContent = renderer.render(army, { ...settings.options });
-  } catch (err) {
-    setStatus(`Render error: ${err.message || err}`, true);
-    return;
-  }
-  // New source → any previously compiled PDF is stale.
+  try { mainContent = currentRenderer.render(army, currentOptions); }
+  catch (err) { setStatus(`Render error: ${err.message || err}`, true); return; }
   currentContent = mainContent;
-  if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
-  const id = ++latestId;
-  worker.postMessage({ type: 'render', id, mainContent });
+  const y = els.viewer.scrollTop;
+  renderSvg(mainContent).then((svg) => {
+    if (token !== previewToken) return;
+    els.viewer.innerHTML = svg;
+    markPageBreaks();
+    els.viewer.scrollTop = y;
+    els.download.hidden = false;
+    els.print.hidden = false;
+    setStatus('');
+  }).catch((err) => { if (token === previewToken) setStatus(`Failed to render: ${err.message || err}`, true); });
+}
+
+// Per-card preview (Cards): a grid of individual cards, each with a checkbox.
+// Unchecked cards are excluded from the PDF.
+function renderCards(token) {
+  const units = currentRenderer.unitList(army);
+  els.selectAll.hidden = false;
+  syncSelectAllLabel();
+  els.viewer.classList.add('cards');
+  els.viewer.innerHTML = '';
+  els.download.hidden = false;
+  els.print.hidden = false;
+  setStatus('');
+  for (const { index, name } of units) {
+    const item = document.createElement('div');
+    item.className = 'card-item';
+    const label = document.createElement('label');
+    label.className = 'card-check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = cardSelection.has(index);
+    cb.dataset.idx = String(index);
+    const nm = document.createElement('span');
+    nm.className = 'card-name';
+    nm.textContent = name;
+    label.append(cb, nm);
+    const out = document.createElement('div');
+    out.className = 'card-out';
+    out.textContent = '…';
+    item.append(label, out);
+    item.classList.toggle('unchecked', !cb.checked);
+    els.viewer.appendChild(item);
+    cb.addEventListener('change', () => {
+      if (cb.checked) cardSelection.add(index); else cardSelection.delete(index);
+      item.classList.toggle('unchecked', !cb.checked);
+      syncSelectAllLabel();
+      invalidatePdf();
+    });
+    renderSvg(currentRenderer.previewUnit(army, index, currentOptions))
+      .then((svg) => { if (token === previewToken) out.innerHTML = svg; })
+      .catch((err) => { out.innerHTML = `<pre class="err">${err.message || err}</pre>`; });
+  }
+}
+
+function syncSelectAllLabel() {
+  if (!army || !currentRenderer || !currentRenderer.perCardPreview) return;
+  const total = currentRenderer.unitList(army).length;
+  els.selectAll.textContent = cardSelection.size >= total ? 'Unselect all' : 'Select all';
 }
 
 // Paper dimensions in points (Typst's SVG user units), for locating page breaks.
@@ -345,6 +448,7 @@ function addSep(topPx, label) {
 }
 function markPageBreaks() {
   els.viewer.querySelectorAll('.page-sep').forEach((e) => e.remove());
+  if (els.viewer.classList.contains('cards')) return; // no page markers in card mode
   const svgs = [...els.viewer.querySelectorAll('svg')];
   const base = els.viewer.getBoundingClientRect().top - els.viewer.scrollTop;
   if (svgs.length > 1) {
