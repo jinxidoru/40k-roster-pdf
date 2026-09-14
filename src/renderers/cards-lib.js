@@ -640,7 +640,9 @@ export function previewUnitDoc(view, sizeKey, accentHex, opts = {}) {
 export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   const { w, h } = CARD_SIZES[sizeKey] || CARD_SIZES.standard;
   const [pw, ph] = PAPER_MM[paperKey] || PAPER_MM['us-letter'];
-  const units = views.map(unitDict).join(',\n    ');
+  // arrayLit so a single selected unit is still a 1-tuple `(dict,)`, not a bare
+  // dict (which `for u in …` would iterate field-wise).
+  const units = arrayLit(views.map(unitDict));
   const inv = opts.invBottom ? 'true' : 'false';
   // Army-summary card copies (0/1/2). The summary is DESIGNED landscape (wide
   // table); in the PDF it's rotated 90° into a portrait cell so the physical
@@ -657,10 +659,12 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   let ch = ${h}mm
   let all = ()
   // Landscape summary card(s) rotated into portrait cells; repeated once per
-  // requested copy (the extra copy is for your opponent).
-  let summary = (${summaryLit}).map(c => box(width: cw, height: ch, clip: true, place(center + horizon, rotate(90deg, c))))
+  // requested copy (the extra copy is for your opponent). reflow:true gives the
+  // rotated box its true (cw×ch) size so it fills the cell and the landscape
+  // header lands on the card edge (not the middle).
+  let summary = (${summaryLit}).map(c => rotate(90deg, reflow: true, c))
   for _c in range(${copies}) { all = all + summary }
-  for u in (${units}) { all = all + makecards(u, cw, ch, round: false, invBottom: ${inv}) }
+  for u in ${units} { all = all + makecards(u, cw, ch, round: false, invBottom: ${inv}) }
   let cols = calc.max(1, calc.floor(${pw}mm / cw))
   let rows = calc.max(1, calc.floor(${ph}mm / ch))
   let per = cols * rows

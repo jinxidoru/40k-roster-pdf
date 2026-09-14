@@ -112,7 +112,7 @@ select {
 .status { min-height: 1.4em; margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 .status.error { color: var(--accent); }
 
-.preview { display: flex; flex-direction: column; min-height: 70vh; }
+.preview { display: flex; flex-direction: column; min-height: 0; }
 .preview-head {
   display: flex; align-items: center; gap: 12px;
   margin-bottom: 10px; font-size: 13px; color: var(--muted);
@@ -135,7 +135,10 @@ select {
 .download:hover { background: #dcfce7; border-color: #16a34a; }
 #viewer {
   position: relative;
-  width: 100%; height: 80vh; border: 1px solid var(--line); border-radius: 6px;
+  /* Fill the space left under the page chrome (topbar, margins, preview head,
+     footer) so the viewer is the only scroller — no page-level second scrollbar. */
+  width: 100%; height: calc(100vh - 250px); min-height: 320px;
+  border: 1px solid var(--line); border-radius: 6px;
   background: var(--bg); overflow: auto; padding: 12px;
 }
 .page-sep {
