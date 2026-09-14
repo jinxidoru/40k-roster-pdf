@@ -92,6 +92,89 @@ export function paletteColorFor(faction) {
   return hit ? hit.color : null;
 }
 
+// --- roster/summary table helpers (shared by Standard + Cards summary) ------
+// Unit keywords worth surfacing next to the name in the roster/summary tables.
+export const SUBSET_KEYWORDS = ['infantry', 'swarm', 'beast', 'monster', 'vehicle', 'psyker'];
+export function subsetKeywords(keywords) {
+  const seen = new Set();
+  const out = [];
+  for (const k of keywords || []) {
+    const lc = String(k).toLowerCase();
+    if (SUBSET_KEYWORDS.includes(lc) && !seen.has(lc)) { seen.add(lc); out.push(k); }
+  }
+  return out;
+}
+
+// The main profile is the bulk trooper, whose name matches the unit (e.g.
+// "Warbiker" for "Warbikers"); leader/variant profiles are secondary. Match
+// exact, then singular, then name-is-a-prefix, else first. Alternate profiles
+// whose characteristics are identical to the main profile (e.g. a "Warbiker
+// Nob" statted the same as "Warbiker") are dropped — they add nothing to the
+// list — as are duplicate alternates.
+export function splitProfiles(u) {
+  if (!u.stats || !u.stats.length) return { main: null, secondary: [] };
+  const nameLc = u.name.toLowerCase();
+  const singular = nameLc.replace(/s$/, '');
+  const main =
+    u.stats.find((s) => s.name.toLowerCase() === nameLc) ||
+    u.stats.find((s) => s.name.toLowerCase() === singular) ||
+    u.stats.find((s) => nameLc.startsWith(s.name.toLowerCase())) ||
+    u.stats[0];
+  const mainSig = JSON.stringify(main.chars);
+  const seen = new Set([mainSig]);
+  const secondary = [];
+  for (const s of u.stats) {
+    if (s === main) continue;
+    const sig = JSON.stringify(s.chars);
+    if (seen.has(sig)) continue; // identical to the main (or an earlier) profile
+    seen.add(sig);
+    secondary.push(s);
+  }
+  return { main, secondary };
+}
+
+// Group units that share a datasheet identity but differ only by enhancement
+// into one entry, merging their enhancements. Units are identical in every
+// other respect (name, models, stats, weapons, abilities, keywords) — parse.js
+// has already collapsed fully-identical units (with a count), so this mainly
+// merges enhancement variants of the same datasheet. Order is preserved.
+export function datasheetGroups(units) {
+  const map = new Map();
+  const order = [];
+  for (const u of units) {
+    const sig = JSON.stringify({
+      name: u.name, models: u.models, stats: u.stats,
+      ranged: u.ranged, melee: u.melee, abilities: u.abilities,
+      keywords: u.keywords, core: u.core, faction: u.faction,
+    });
+    const enh = u.enhancement ? [u.enhancement] : [];
+    const g = map.get(sig);
+    if (g) {
+      g.count += u.count || 1;
+      for (const e of enh) if (!g.enhancements.some((x) => x.name === e.name)) g.enhancements.push(e);
+    } else {
+      const ng = { unit: u, count: u.count || 1, enhancements: [...enh] };
+      map.set(sig, ng);
+      order.push(ng);
+    }
+  }
+  return order;
+}
+
+// Group units that render identically in a table (same name/models/points/
+// stats), summing their counts.
+export function rosterGroups(units) {
+  const map = new Map();
+  const order = [];
+  for (const u of units) {
+    const sig = JSON.stringify({ name: u.name, models: u.models, points: u.points, stats: u.stats });
+    const g = map.get(sig);
+    if (g) g.count += u.count || 1;
+    else { const ng = { unit: u, count: u.count || 1 }; map.set(sig, ng); order.push(ng); }
+  }
+  return order;
+}
+
 // Clean rules/ability text: drop nbsp, strip the dataset's **/^^ markup, strip
 // wrapping quotes, collapse whitespace.
 export function clean(s) {

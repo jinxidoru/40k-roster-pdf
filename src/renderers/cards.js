@@ -3,7 +3,10 @@
 // adds a select checkbox); the PDF imposes the selected cards onto the print
 // page. render(army, options, 'print') returns the imposed Typst doc.
 
-import { CARD_SIZES, resolveAccent, unitView, previewUnitDoc, imposeDoc, unitList, summaryCardDoc } from './cards-lib.js';
+import {
+  CARD_SIZES, resolveAccent, cardGroups, groupView,
+  previewUnitDoc, imposeDoc, unitList, summaryCardDoc,
+} from './cards-lib.js';
 
 const sizeChoices = Object.entries(CARD_SIZES).map(([value, s]) => ({ value, label: s.label }));
 
@@ -18,8 +21,8 @@ export default {
       key: 'cardSize',
       label: 'Card size',
       type: 'select',
-      default: 'standard',
-      help: 'Physical card size. Standard is Magic/Poker (63×88mm).',
+      default: 'tarot',
+      help: 'Physical card size. Standard is Magic/Poker (63×88mm); Tarot is larger (70×120mm).',
       choices: sizeChoices,
     },
     {
@@ -34,16 +37,18 @@ export default {
       ],
     },
     {
-      key: 'summaryCopies',
-      label: 'Army summary card',
-      type: 'select',
-      default: '1',
-      help: 'A landscape card at the top of the deck listing the whole army’s stats (name, faction, points, and every unit). Choose how many copies to print.',
-      choices: [
-        { value: '0', label: 'None' },
-        { value: '1', label: '1 copy' },
-        { value: '2', label: '2 copies' },
-      ],
+      key: 'showPoints',
+      label: 'Points on summary card',
+      type: 'bool',
+      default: true,
+      help: 'Show a Pts column on the army-summary card. Turn off for a cleaner summary table when points aren’t needed.',
+    },
+    {
+      key: 'opponentCopy',
+      label: 'Second summary (opponent)',
+      type: 'bool',
+      default: false,
+      help: 'When the army-summary card is included, print a second copy — meant to hand to your opponent so they can see your army at a glance.',
     },
     {
       key: 'accent',
@@ -54,7 +59,7 @@ export default {
     },
     {
       key: 'invAtBottom',
-      label: 'Invuln at bottom',
+      label: 'Inv Sv at bottom',
       type: 'bool',
       default: false,
       help: 'Place the invulnerable-save shield at the bottom of the stat rail. Off = just below the armour save (Sv).',
@@ -64,28 +69,36 @@ export default {
   // Units available for selection: [{ index, name }].
   unitList,
 
-  // The army-summary card preview doc, or null when set to zero copies.
+  // The army-summary card preview doc. Always available — the app shows it as a
+  // selectable card (checkbox) alongside the units.
   summaryDoc(army, options) {
-    return Number(options.summaryCopies) > 0
-      ? summaryCardDoc(army, options.cardSize, resolveAccent(options, army))
-      : null;
+    return summaryCardDoc(army, options.cardSize, resolveAccent(options, army),
+      { showPoints: options.showPoints !== false });
   },
 
-  // A standalone Typst doc for one unit's cards (used by the per-card preview).
+  // A standalone Typst doc for one card group's cards (per-card preview). `index`
+  // is a datasheet-group index (see cardGroups).
   previewUnit(army, index, options) {
-    return previewUnitDoc(unitView(army.units[index]), options.cardSize, resolveAccent(options, army),
+    const g = cardGroups(army)[index];
+    if (!g) return '';
+    return previewUnitDoc(groupView(g), options.cardSize, resolveAccent(options, army),
       { invBottom: !!options.invAtBottom });
   },
 
-  // The imposed PDF of the selected units (defaults to all if none specified).
+  // The imposed PDF of the selected card groups (defaults to all if unspecified).
+  // The summary is included when its checkbox is selected (options.summarySelected);
+  // opponentCopy adds a second copy.
   render(army, options = {}, _mode = 'print') {
-    const sel = Array.isArray(options.selected) ? options.selected : army.units.map((_u, i) => i);
+    const groups = cardGroups(army);
+    const sel = Array.isArray(options.selected) ? options.selected : groups.map((_g, i) => i);
     const views = sel
-      .filter((i) => army.units[i])
-      .map((i) => unitView(army.units[i]));
+      .filter((i) => groups[i])
+      .map((i) => groupView(groups[i]));
+    const summaryCopies = options.summarySelected ? (options.opponentCopy ? 2 : 1) : 0;
     return imposeDoc(views, options.cardSize, options.paper, resolveAccent(options, army), {
       army,
-      summaryCopies: Number(options.summaryCopies) || 0,
+      summaryCopies,
+      showPoints: options.showPoints !== false,
       invBottom: !!options.invAtBottom,
     });
   },

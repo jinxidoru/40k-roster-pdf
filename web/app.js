@@ -5,7 +5,7 @@
 
 import { parseRoster, isNewRecruitRoster } from '../src/parse.js';
 import { renderers, byId, defaultRenderer } from '../src/render.js';
-import { FACTION_PALETTE } from '../src/renderers/shared.js';
+import { FACTION_PALETTE, paletteColorFor, accentFor } from '../src/renderers/shared.js';
 
 const TYPST_VERSION = '0.7.0';
 const CDN = `https://cdn.jsdelivr.net/npm`;
@@ -29,12 +29,15 @@ const els = {
 els.selectAll.addEventListener('click', () => {
   if (!currentRenderer || !currentRenderer.perCardPreview) return;
   const units = currentRenderer.unitList(army);
-  const allSelected = units.every((u) => cardSelection.has(u.index));
+  const hasSummary = !!currentRenderer.summaryDoc;
+  const allSelected = units.every((u) => cardSelection.has(u.index)) && (!hasSummary || summarySelected);
   cardSelection.clear();
-  if (!allSelected) units.forEach((u) => cardSelection.add(u.index));
+  if (!allSelected) { units.forEach((u) => cardSelection.add(u.index)); summarySelected = true; }
+  else summarySelected = false;
   els.viewer.querySelectorAll('.card-item').forEach((item) => {
     const cb = item.querySelector('input');
-    cb.checked = cardSelection.has(Number(cb.dataset.idx));
+    if (!cb) return;
+    cb.checked = cb.dataset.summary ? summarySelected : cardSelection.has(Number(cb.dataset.idx));
     item.classList.toggle('unchecked', !cb.checked);
   });
   syncSelectAllLabel();
@@ -46,6 +49,7 @@ els.selectAll.addEventListener('click', () => {
 els.print.onclick = async () => {
   try {
     const url = await ensurePdf();
+    track('print');
     if (els.printFrame.src === url) {
       els.printFrame.contentWindow?.focus();
       els.printFrame.contentWindow?.print();
@@ -88,7 +92,8 @@ let coreGlossary = {}; // bundled core-keyword definitions; {} if src/keywords.j
 let currentRenderer = null;
 let currentOptions = {};
 let previewToken = 0; // supersedes stale single-preview renders
-const cardSelection = new Set(); // selected unit indices (perCardPreview renderers)
+const cardSelection = new Set(); // selected card-group indices (perCardPreview renderers)
+let summarySelected = true; // army-summary card included (perCardPreview renderers)
 let currentContent = ''; // Typst source of the single-doc preview (non-card renderers)
 let pdfUrl = null; // cached PDF blob URL, or null if stale
 let reqId = 0; // shared id space for render + pdf worker requests
@@ -117,6 +122,7 @@ function ensurePdf() {
     const opts = { ...currentOptions };
     if (currentRenderer && currentRenderer.perCardPreview) {
       opts.selected = [...cardSelection].sort((a, b) => a - b);
+      opts.summarySelected = summarySelected;
     }
     printContent = currentRenderer.render(army, opts, 'print');
   } catch (err) {
@@ -253,8 +259,15 @@ function addRecentColor(hex) {
   try { localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(list)); } catch { /* ignore */ }
 }
 
+// The faction's default accent color (for the swatch when "Default" is chosen).
+function factionDefaultColor() {
+  const f = army && army.meta && army.meta.faction;
+  return paletteColorFor(f) || accentFor(f) || '#c8102e';
+}
+
 // Color option: a dropdown of Default / recent colors / faction palette, plus a
-// native picker for a custom color. Value is 'faction' or a #hex.
+// swatch that both shows the current color and (when clicked) picks a custom one.
+// Value is 'faction' or a #hex.
 function colorControl(opt, id, val) {
   const wrap = document.createElement('div');
   wrap.className = 'color-control';
@@ -275,21 +288,24 @@ function colorControl(opt, id, val) {
   const g2 = document.createElement('optgroup'); g2.label = 'Factions';
   FACTION_PALETTE.forEach((e) => addOpt(e.color, e.name, g2));
   sel.appendChild(g2);
-  addOpt('__custom__', 'Custom…');
   const has = (v) => [...sel.querySelectorAll('option')].some((o) => o.value.toLowerCase() === String(v).toLowerCase());
+  // A custom hex (not one of the presets) shows as its own selected entry.
   if (isHex && !has(val)) {
     const o = document.createElement('option'); o.value = val; o.textContent = `Custom (${val})`;
     sel.insertBefore(o, sel.children[1] || null);
   }
   sel.value = isHex ? val : 'faction';
+
   const picker = document.createElement('input');
   picker.type = 'color';
   picker.className = 'color-swatch';
-  picker.title = 'Custom color';
-  picker.value = isHex ? val : '#c8102e';
+  picker.title = 'Pick a custom color';
+  // The swatch reflects the selection: the faction color for Default, else the hex.
+  picker.value = isHex ? val : factionDefaultColor();
+
   const apply = (v) => { settings.options[opt.key] = v; saveSettings(); regenerate(); };
   sel.addEventListener('change', () => {
-    if (sel.value === '__custom__') { picker.click(); return; }
+    picker.value = sel.value === 'faction' ? factionDefaultColor() : sel.value;
     apply(sel.value);
   });
   picker.addEventListener('change', () => { addRecentColor(picker.value); apply(picker.value); buildOptions(); });
@@ -327,7 +343,9 @@ function loadRoster(json) {
   army.coreGlossary = coreGlossary;
   cardSelection.clear();
   army.units.forEach((_u, i) => cardSelection.add(i)); // default: all cards selected
+  summarySelected = true; // default: army summary included
   els.renderOptions.hidden = false;
+  buildOptions(); // refresh controls (e.g. color swatch now reflects the faction)
   els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
   // One anonymous event per loaded roster (not per re-render), plus the faction.
   track('pdf-generated');
@@ -449,20 +467,34 @@ function renderCards(token) {
   els.download.hidden = false;
   els.print.hidden = false;
   setStatus('');
-  // Optional army-summary card at the top (controlled by an option, no checkbox).
+  // Army-summary card at the top, with a checkbox like the unit cards.
   if (currentRenderer.summaryDoc) {
     const sdoc = currentRenderer.summaryDoc(army, currentOptions);
     if (sdoc) {
       const item = document.createElement('div');
       item.className = 'card-item summary';
-      const nm = document.createElement('div');
+      const label = document.createElement('label');
+      label.className = 'card-check';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = summarySelected;
+      cb.dataset.summary = '1';
+      const nm = document.createElement('span');
       nm.className = 'card-name';
       nm.textContent = 'Army summary';
+      label.append(cb, nm);
       const out = document.createElement('div');
       out.className = 'card-out';
       out.textContent = '…';
-      item.append(nm, out);
+      item.append(label, out);
+      item.classList.toggle('unchecked', !summarySelected);
       els.viewer.appendChild(item);
+      cb.addEventListener('change', () => {
+        summarySelected = cb.checked;
+        item.classList.toggle('unchecked', !cb.checked);
+        syncSelectAllLabel();
+        invalidatePdf();
+      });
       renderSvg(sdoc)
         .then((svg) => { if (token === previewToken) out.innerHTML = svg; })
         .catch((err) => { out.innerHTML = `<pre class="err">${err.message || err}</pre>`; });
@@ -501,13 +533,16 @@ function renderCards(token) {
 
 function syncSelectAllLabel() {
   if (!army || !currentRenderer || !currentRenderer.perCardPreview) return;
-  const total = currentRenderer.unitList(army).length;
-  els.selectAll.textContent = cardSelection.size >= total ? 'Unselect all' : 'Select all';
+  const units = currentRenderer.unitList(army);
+  const hasSummary = !!currentRenderer.summaryDoc;
+  const all = units.every((u) => cardSelection.has(u.index)) && (!hasSummary || summarySelected);
+  els.selectAll.textContent = all ? 'Unselect all' : 'Select all';
 }
 
 // Paper dimensions in points (Typst's SVG user units), for locating page breaks.
 const PAGE_PT = {
   'us-letter': [612, 792],
+  'half-letter': [396, 612],
   a4: [595.28, 841.89],
   a5: [419.53, 595.28],
 };

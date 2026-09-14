@@ -3,6 +3,7 @@
 
 import {
   accentFor, clean, formatKeywords, ts, mk, statVal,
+  splitProfiles, rosterGroups, subsetKeywords, datasheetGroups,
 } from './shared.js';
 
 // Typst preamble (page/style + helper functions). `accent` is the faction color,
@@ -54,71 +55,62 @@ function statCells(chars) {
   return STAT_KEYS.map((k) => ts(statVal(chars, k) || '—'));
 }
 
-// The main profile is the bulk trooper, whose name matches the unit (e.g.
-// "Warbiker" for "Warbikers"); leader/variant profiles (e.g. "Biker Nob") are
-// shown as secondary. Match exact, then singular, then name-is-a-prefix, else first.
-function splitProfiles(u) {
-  if (!u.stats.length) return { main: null, secondary: [] };
-  const nameLc = u.name.toLowerCase();
-  const singular = nameLc.replace(/s$/, '');
-  const main =
-    u.stats.find((s) => s.name.toLowerCase() === nameLc) ||
-    u.stats.find((s) => s.name.toLowerCase() === singular) ||
-    u.stats.find((s) => nameLc.startsWith(s.name.toLowerCase())) ||
-    u.stats[0];
-  return { main, secondary: u.stats.filter((s) => s !== main) };
+// Unit name cell: bold name (+ model count in parens), then any surfaced subset
+// keywords after an em-dash in a lighter color.
+function unitNameCell(u) {
+  const models = u.models > 1 ? ` (${u.models})` : '';
+  const kw = subsetKeywords(u.keywords || []);
+  const tail = kw.length ? ` #text(fill: luma(130))[— ${mk(kw.join(', ').toUpperCase())}]` : '';
+  return `[#text(weight: "bold")[${mk(u.name + models)}]${tail}]`;
 }
 
-// Group units that render identically in the roster table (same name, models,
-// stat profiles, points), summing their counts. Two units that differ only in
-// something the table doesn't show — abilities, loadout, enhancement — collapse
-// to one line here, but remain separate datasheets below.
-function rosterGroups(units) {
-  const map = new Map();
-  const order = [];
-  for (const u of units) {
-    const sig = JSON.stringify({ name: u.name, models: u.models, points: u.points, stats: u.stats });
-    const g = map.get(sig);
-    if (g) g.count += u.count || 1;
-    else { const ng = { unit: u, count: u.count || 1 }; map.set(sig, ng); order.push(ng); }
-  }
-  return order;
-}
-
-function rosterTable(units) {
+// `opts`: { showPoints, showCount }. showCount adds a leading quantity column
+// (only when some unit is present in multiples).
+function rosterTable(units, opts = {}) {
   const groups = rosterGroups(units);
+  const showCount = groups.some((g) => g.count > 1);
+  const showPoints = opts.showPoints !== false;
   const rows = [];
   for (const g of groups) {
     const u = g.unit;
     const { main, secondary } = splitProfiles(u);
     const chars = main ? main.chars : {};
-
-    const base = u.models > 1 ? `${u.name} (${u.models})` : u.name;
-    const label = g.count > 1 ? `${base} ×${g.count}` : base;
     rows.push([
-      ts(label),
+      ...(showCount ? [ts(String(g.count))] : []),
+      unitNameCell(u),
       ...statCells(chars),
-      u.points == null ? ts('—') : ts(String(u.points)),
+      ...(showPoints ? [u.points == null ? ts('—') : ts(String(u.points))] : []),
     ].join(', '));
 
-    // Secondary profiles: indented, italic/faint, no points. Each is its own
-    // row and participates in the per-row alternating shading.
+    // Secondary profiles: indented, italic/faint, no count/points.
     for (const s of secondary) {
-      const nameCell = `[#h(1em)#text(fill: luma(110), style: "italic")[${mk(s.name)}]]`;
       rows.push([
-        nameCell,
+        ...(showCount ? [ts('')] : []),
+        `[#h(1em)#text(fill: luma(110), style: "italic")[${mk(s.name)}]]`,
         ...STAT_KEYS.map((k) => `[#text(fill: luma(110))[${mk(statVal(s.chars, k) || '—')}]]`),
-        ts(''),
+        ...(showPoints ? [ts('')] : []),
       ].join(', '));
     }
   }
 
-  const cols = ['Unit', 'M', 'T', 'Sv', 'Inv', 'W', 'Ld', 'OC', 'Pts'];
-  const header = cols.map((c) => `hc[${c}]`).join(', ');
+  const cols = [
+    ...(showCount ? ['#'] : []), 'Unit', 'M', 'T', 'Sv', 'Inv', 'W', 'Ld', 'OC',
+    ...(showPoints ? ['Pts'] : []),
+  ];
+  const colSpec = [
+    ...(showCount ? ['auto'] : []), '1fr', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto',
+    ...(showPoints ? ['auto'] : []),
+  ];
+  const align = [
+    ...(showCount ? ['center'] : []), 'left', 'center', 'center', 'center', 'center', 'center', 'center', 'center',
+    ...(showPoints ? ['center'] : []),
+  ];
+  // '#' is special in Typst markup — escape it in the count-column header.
+  const header = cols.map((c) => `hc[${c === '#' ? '\\#' : c}]`).join(', ');
   return (
     `#table(\n` +
-    `  columns: (1fr, auto, auto, auto, auto, auto, auto, auto, auto),\n` +
-    `  align: (left, center, center, center, center, center, center, center, center),\n` +
+    `  columns: (${colSpec.join(', ')}),\n` +
+    `  align: (${align.join(', ')}),\n` +
     `  fill: (_, r) => if r != 0 and calc.odd(r) { rgb("#f2f2f2") },\n` +
     `  ${header},\n` +
     rows.map((r) => `  ${r},`).join('\n') +
@@ -135,7 +127,8 @@ function weaponTable(u, opts = {}) {
   const rows = all.map((w) => {
     const c = w.chars;
     const skill = c.BS || c.WS || '—';
-    const kw = formatKeywords(c.Keywords || '');
+    let kw = formatKeywords(c.Keywords || '');
+    if (opts.weaponKeywordsCaps && kw) kw = kw.toUpperCase();
     const range = c.Range && c.Range !== 'Melee' ? c.Range : '—';
     const marker = w.kind === 'R' ? 'ico("⌖", dy: -0.5pt)' : 'ico("⚔")';
     return [
@@ -181,12 +174,11 @@ function abilityItem(a) {
 function unitDetail(u, opts = {}) {
   const parts = [];
 
-  // Title meta: model count and keywords (UPPERCASE); points omitted here.
+  // Title meta: model count and keywords (UPPERCASE); points/unit-count omitted.
   const meta = [];
   if (u.models > 1) meta.push(`${u.models} models`);
   if (u.keywords.length) meta.push(u.keywords.join(', ').toUpperCase());
-  const title = u.count > 1 ? `${u.name} ×${u.count}` : u.name;
-  parts.push(`#unitband(${ts(title)}, ${ts(meta.join('  ·  '))})`);
+  parts.push(`#unitband(${ts(u.name)}, ${ts(meta.join('  ·  '))})`);
 
   // (Stat profiles — including alternate/secondary — live only in the top table.)
 
@@ -215,8 +207,11 @@ function unitDetail(u, opts = {}) {
   if (items.length) {
     parts.push(`#text(size: 6.9pt)[${items.join(ABIL_SEP)}]`);
   }
-  if (u.enhancement) {
-    parts.push(`#text(size: 6.9pt, fill: accent)[#text(weight: "bold")[Enhancement — ${mk(u.enhancement.name)} (${u.enhancement.points} pts) — ] ${mk(clean(u.enhancement.text))}]`);
+  // Enhancements: the coalesced list (units differing only by enhancement share
+  // one datasheet), else this unit's single enhancement.
+  const enhancements = opts.enhancements || (u.enhancement ? [u.enhancement] : []);
+  for (const e of enhancements) {
+    parts.push(`#text(size: 6.9pt, fill: accent)[#text(weight: "bold")[Enhancement — ${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text || ''))}]`);
   }
   if (u.enhancementMissing) {
     parts.push(`#text(size: 6.9pt, fill: red)[Enhancement not found: ${mk(u.enhancementMissing)}]`);
@@ -226,7 +221,9 @@ function unitDetail(u, opts = {}) {
   return `#block(breakable: false, width: 100%)[\n${parts.join('\n\n')}\n]\n#v(3pt)\n\n`;
 }
 
-const PAPERS = { 'us-letter': 'us-letter', a4: 'a4', a5: 'a5' };
+// Typst paper names. "us-statement" is 5.5×8.5in = Half Letter (half of US
+// Letter), the US analogue of A5.
+const PAPERS = { 'us-letter': 'us-letter', 'half-letter': 'us-statement', a4: 'a4', a5: 'a5' };
 
 // Options may arrive as real booleans (checkbox) or "true"/"false" strings
 // (persisted/query). Normalize to a boolean with an explicit default.
@@ -261,6 +258,7 @@ function render(army, options = {}) {
   const paper = PAPERS[options.paper] || 'us-letter';
   const opts = {
     weaponHeaders: bool(options.weaponHeaders, true),
+    weaponKeywordsCaps: bool(options.weaponKeywordsCaps, false),
     coreFactionInAbilities: bool(options.coreFactionInAbilities, true),
     keywordGlossary: glossaryMode(options.keywordGlossary),
   };
@@ -281,8 +279,10 @@ function render(army, options = {}) {
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
   );
 
-  doc += rosterTable(units) + '\n';
-  for (const u of units) doc += unitDetail(u, opts);
+  doc += rosterTable(units, { showPoints: bool(options.showPoints, true) }) + '\n';
+  // Datasheets: units differing only by enhancement share one datasheet, which
+  // lists all their enhancements.
+  for (const g of datasheetGroups(units)) doc += unitDetail(g.unit, { ...opts, enhancements: g.enhancements });
 
   if (army.enhancements.length) {
     doc += `#section("Enhancements")\n`;
@@ -376,9 +376,17 @@ export default {
       help: 'Physical page size for the sheet. US Letter and A4 are full-size; A5 is a compact half-of-A4 format (fits more pages, smaller print).',
       choices: [
         { value: 'us-letter', label: 'US Letter' },
+        { value: 'half-letter', label: 'Half Letter' },
         { value: 'a4', label: 'A4' },
         { value: 'a5', label: 'A5' },
       ],
+    },
+    {
+      key: 'showPoints',
+      label: 'Points column',
+      type: 'bool',
+      default: true,
+      help: 'Show a Pts column in the roster summary table with each unit’s points cost. Turn off for a cleaner table when points aren’t needed.',
     },
     {
       key: 'weaponHeaders',
@@ -386,6 +394,13 @@ export default {
       type: 'bool',
       default: true,
       help: 'Show the column-header row (Weapon / Rng / A / BS-WS / S / AP / D / Keywords) above each unit’s weapons. Turn off to drop the repeated headers and tuck the weapon table tight under the unit’s name band — denser, but you lose the column labels.',
+    },
+    {
+      key: 'weaponKeywordsCaps',
+      label: 'Weapon keywords in caps',
+      type: 'bool',
+      default: false,
+      help: 'Render every weapon keyword in ALL CAPS (e.g. “ASSAULT, RAPID FIRE 1”) instead of Title Case. Matches the look of the official datasheets.',
     },
     {
       key: 'coreFactionInAbilities',
