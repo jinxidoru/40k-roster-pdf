@@ -266,8 +266,9 @@ export function preamble(accent, titlefont = 'Anton') {
 
 // An ability paragraph.
 #let abil(name, body) = block(width: 100%, inset: (y: 1pt), text(size: 6.6pt)[#text(weight: "bold", name)#if body != "" [ — #body]])
-// An enhancement paragraph — accent-colored, to set it apart from abilities.
-#let enh(name, body) = block(width: 100%, inset: (y: 1pt), text(size: 6.6pt, fill: accent)[#text(weight: "bold", name)#if body != "" [ — #body]])
+// An enhancement paragraph — same text color as abilities; the "Enhancements"
+// section label above it (accent) is what sets it apart.
+#let enh(name, body) = block(width: 100%, inset: (y: 1pt), text(size: 6.6pt)[#text(weight: "bold", name)#if body != "" [ — #body]])
 
 // --- packer ----------------------------------------------------------------
 // Split \`blocks\` across as many cards as needed so nothing overflows, drawing
@@ -641,11 +642,13 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   const [pw, ph] = PAPER_MM[paperKey] || PAPER_MM['us-letter'];
   const units = views.map(unitDict).join(',\n    ');
   const inv = opts.invBottom ? 'true' : 'false';
-  // Army-summary card copies (0/1/2). In the PDF the summary is a portrait card
-  // (header at top) like the others, repeated once per copy (extra = opponent's).
+  // Army-summary card copies (0/1/2). The summary is DESIGNED landscape (wide
+  // table); in the PDF it's rotated 90° into a portrait cell so the physical
+  // card cuts like the others but the text reads landscape. Rotation via place
+  // in a fixed cw×ch box (no reflow — the most compatible form).
   const copies = Math.max(0, Math.min(2, opts.summaryCopies || 0));
   const summaryLit = (opts.army && copies > 0)
-    ? summaryPortraitCardsLit(opts.army, w, h, false, { showPoints: opts.showPoints }) // square corners in the PDF
+    ? summaryCardsLit(opts.army, w, h, false, { showPoints: opts.showPoints }) // landscape, square corners
     : '()';
   return `${preamble(accentHex, 'Anton')}
 #set page(width: ${pw}mm, height: ${ph}mm, margin: 0pt)
@@ -653,9 +656,9 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   let cw = ${w}mm
   let ch = ${h}mm
   let all = ()
-  // Summary card(s): portrait, header at the top — same orientation as the unit
-  // cards. Repeated once per requested copy (the extra copy is for your opponent).
-  let summary = (${summaryLit})
+  // Landscape summary card(s) rotated into portrait cells; repeated once per
+  // requested copy (the extra copy is for your opponent).
+  let summary = (${summaryLit}).map(c => box(width: cw, height: ch, clip: true, place(center + horizon, rotate(90deg, c))))
   for _c in range(${copies}) { all = all + summary }
   for u in (${units}) { all = all + makecards(u, cw, ch, round: false, invBottom: ${inv}) }
   let cols = calc.max(1, calc.floor(${pw}mm / cw))
@@ -699,10 +702,9 @@ export function unitList(army) {
 // PORTRAIT card (header at top, like the unit cards) for the imposed PDF.
 const SUMMARY_STAT_KEYS = ['M', 'T', 'Sv', 'InSv', 'W', 'LD', 'OC'];
 
-// Font sizes (pt) for the two layouts; portrait is smaller to fit the narrow card.
+// Font sizes (pt) for the landscape summary table.
 const SUMMARY_SIZE = {
   landscape: { name: 6.2, kw: 5, cell: 6.2, secName: 6, secCell: 6, header: 5.5, inset: 3 },
-  portrait: { name: 5.6, kw: 4.4, cell: 5.6, secName: 5.4, secCell: 5.4, header: 5, inset: 2 },
 };
 
 // Build the shared table model (columns + rows) for the army summary.
@@ -796,22 +798,6 @@ function summaryCardsLit(army, cw, ch, round = true, opts = {}) {
         text(fill: onaccent, size: 6pt, ${ts(model.meta)})
       })
       block(width: 100%, inset: (x: 2.5mm, top: 1.5mm, bottom: 2mm), ${summaryTableExpr(model, chunk)})
-    })`);
-  return `(${cards.join(',\n    ')}${cards.length === 1 ? ',' : ''})`;
-}
-
-// PORTRAIT cards for the imposed PDF: header banner at the top, table below —
-// same orientation as the unit cards. Overflows onto extra cards.
-function summaryPortraitCardsLit(army, cw, ch, round = false, opts = {}) {
-  const model = summaryModel(army, opts, SUMMARY_SIZE.portrait);
-  const perCard = Math.max(4, Math.floor((ch - 20) / 2.8));
-  const cards = chunkRows(model.rows, perCard).map((chunk) => `cardframe(${cw}mm, ${ch}mm, round: ${round}, {
-      block(width: 100%, fill: accent, inset: (x: 2.5mm, y: 1.3mm), {
-        text(font: titlefont, fill: onaccent, weight: 700, size: 11pt, ${ts(army.meta.name)})
-        linebreak()
-        text(fill: onaccent, size: 5pt, ${ts(model.meta)})
-      })
-      block(width: 100%, inset: (x: 1.5mm, top: 1.2mm, bottom: 1.5mm), ${summaryTableExpr(model, chunk)})
     })`);
   return `(${cards.join(',\n    ')}${cards.length === 1 ? ',' : ''})`;
 }

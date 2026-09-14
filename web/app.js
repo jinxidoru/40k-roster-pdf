@@ -21,9 +21,17 @@ const $ = (id) => document.getElementById(id);
 const els = {
   loading: $('loading'), app: $('app'), drop: $('drop'), file: $('file'), pick: $('pick'),
   renderer: $('renderer'), renderOptions: $('render-options'), options: $('options'), status: $('status'),
-  summary: $('summary'), print: $('print'), download: $('download'),
+  summary: $('summary'), print: $('print'), download: $('download'), resetOptions: $('reset-options'),
   viewer: $('viewer'), printFrame: $('print-frame'), selectAll: $('select-all'),
 };
+
+// Reset ALL renderers' options to their defaults (not just the visible ones).
+els.resetOptions.addEventListener('click', () => {
+  settings.options = {};
+  saveSettings();
+  buildOptions(); // repopulates the current renderer's defaults into settings.options
+  regenerate();
+});
 
 // Select/unselect all cards (per-card renderers only).
 els.selectAll.addEventListener('click', () => {

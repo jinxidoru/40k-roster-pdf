@@ -217,7 +217,7 @@ function unitDetail(u, opts = {}) {
   // one datasheet), else this unit's single enhancement.
   const enhancements = opts.enhancements || (u.enhancement ? [u.enhancement] : []);
   for (const e of enhancements) {
-    parts.push(`#text(size: 6.9pt, fill: accent)[#text(weight: "bold")[Enhancement — ${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text || ''))}]`);
+    parts.push(`#text(size: 6.9pt)[#text(weight: "bold")[Enhancement — ${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text || ''))}]`);
   }
   if (u.enhancementMissing) {
     parts.push(`#text(size: 6.9pt, fill: red)[Enhancement not found: ${mk(u.enhancementMissing)}]`);
