@@ -175,6 +175,20 @@ export function datasheetGroups(units) {
   return order;
 }
 
+// Army-wide + detachment rules for the whole army, de-duplicated by name.
+// parse.js attaches the collected rules to the first unit; older/other shapes
+// may spread them across units, so scan them all. Returns [{ name, text }].
+export function armyRules(army) {
+  const seen = new Set();
+  const out = [];
+  for (const u of (army && army.units) || []) {
+    for (const r of u.rules || []) {
+      if (r && r.name && !seen.has(r.name)) { seen.add(r.name); out.push(r); }
+    }
+  }
+  return out;
+}
+
 // Group units that render identically in a table (same name/models/points/
 // stats), summing their counts.
 export function rosterGroups(units) {
@@ -197,7 +211,12 @@ export function clean(s) {
     .replace(/[\^*~]/g, '')
     .replace(/\s+/g, ' ')
     .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
-    .trim();
+    .trim()
+    // Keep a stat modifier glued to its single-letter characteristic so text
+    // never wraps between the number and the letter (e.g. "+1 A", "-1 S", "+2 D").
+    // Uses a non-breaking space; must be LAST — the whitespace steps above would
+    // otherwise collapse it back to a normal space.
+    .replace(/([+-]\d+) ([A-Za-z])(?![A-Za-z])/g, '$1 $2');
 }
 
 // De-shout ALL-CAPS words (2+ letters) to Title Case; leave already-cased words
@@ -242,4 +261,11 @@ export function mk(s) {
 export function statVal(chars, key) {
   const v = (chars[key] ?? '').trim();
   return v === '' ? null : v;
+}
+
+// Normalize an option that may arrive as a real boolean (checkbox) or a
+// "true"/"false" string (persisted/query/CLI) to a boolean with a default.
+export function bool(v, def) {
+  if (v === undefined || v === null || v === '') return def;
+  return v === true || v === 'true';
 }

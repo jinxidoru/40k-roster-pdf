@@ -37,20 +37,27 @@ els.resetOptions.addEventListener('click', () => {
 els.selectAll.addEventListener('click', () => {
   if (!currentRenderer || !currentRenderer.perCardPreview) return;
   const units = currentRenderer.unitList(army);
-  const hasSummary = !!currentRenderer.summaryDoc;
-  const allSelected = units.every((u) => cardSelection.has(u.index)) && (!hasSummary || summarySelected);
+  const aux = auxCards();
+  const allSelected = units.every((u) => cardSelection.has(u.index)) && aux.every((c) => !auxDeselected.has(c.key));
   cardSelection.clear();
-  if (!allSelected) { units.forEach((u) => cardSelection.add(u.index)); summarySelected = true; }
-  else summarySelected = false;
+  auxDeselected.clear();
+  if (!allSelected) units.forEach((u) => cardSelection.add(u.index)); // select all
+  else aux.forEach((c) => auxDeselected.add(c.key)); // unselect all
   els.viewer.querySelectorAll('.card-item').forEach((item) => {
     const cb = item.querySelector('input');
     if (!cb) return;
-    cb.checked = cb.dataset.summary ? summarySelected : cardSelection.has(Number(cb.dataset.idx));
+    cb.checked = cb.dataset.aux ? !auxDeselected.has(cb.dataset.aux) : cardSelection.has(Number(cb.dataset.idx));
     item.classList.toggle('unchecked', !cb.checked);
   });
   syncSelectAllLabel();
   invalidatePdf();
 });
+
+// The current renderer's aux cards (summary/rules), or [] if it has none.
+function auxCards() {
+  if (!army || !currentRenderer || !currentRenderer.auxCards) return [];
+  return currentRenderer.auxCards(army, currentOptions);
+}
 
 // Preview is SVG (fast). The PDF is compiled lazily — only when the user
 // actually downloads or prints — so toggling options only pays for the SVG.
@@ -102,7 +109,7 @@ let currentRenderer = null;
 let currentOptions = {};
 let previewToken = 0; // supersedes stale single-preview renders
 const cardSelection = new Set(); // selected card-group indices (perCardPreview renderers)
-let summarySelected = true; // army-summary card included (perCardPreview renderers)
+const auxDeselected = new Set(); // aux-card keys (summary/rules) the user unchecked
 let currentContent = ''; // Typst source of the single-doc preview (non-card renderers)
 let pdfUrl = null; // cached PDF blob URL, or null if stale
 let reqId = 0; // shared id space for render + pdf worker requests
@@ -131,7 +138,8 @@ function ensurePdf() {
     const opts = { ...currentOptions };
     if (currentRenderer && currentRenderer.perCardPreview) {
       opts.selected = [...cardSelection].sort((a, b) => a - b);
-      opts.summarySelected = summarySelected;
+      const aux = currentRenderer.auxCards ? currentRenderer.auxCards(army, opts) : [];
+      opts.auxSelected = aux.filter((c) => !auxDeselected.has(c.key)).map((c) => c.key);
     }
     printContent = currentRenderer.render(army, opts, 'print');
   } catch (err) {
@@ -352,7 +360,7 @@ function loadRoster(json) {
   army.coreGlossary = coreGlossary;
   cardSelection.clear();
   army.units.forEach((_u, i) => cardSelection.add(i)); // default: all cards selected
-  summarySelected = true; // default: army summary included
+  auxDeselected.clear(); // default: all aux cards (summary/rules) included
   els.renderOptions.hidden = false;
   buildOptions(); // refresh controls (e.g. color swatch now reflects the faction)
   els.summary.textContent = `${army.meta.name} — ${army.meta.faction} · ${army.meta.detachment} · ${army.meta.points} pts · ${army.units.length} datasheets`;
@@ -486,38 +494,37 @@ function renderCards(token) {
   els.download.hidden = false;
   els.print.hidden = false;
   setStatus('');
-  // Army-summary card at the top, with a checkbox like the unit cards.
-  if (currentRenderer.summaryDoc) {
-    const sdoc = currentRenderer.summaryDoc(army, currentOptions);
-    if (sdoc) {
-      const item = document.createElement('div');
-      item.className = 'card-item summary';
-      const label = document.createElement('label');
-      label.className = 'card-check';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = summarySelected;
-      cb.dataset.summary = '1';
-      const nm = document.createElement('span');
-      nm.className = 'card-name';
-      nm.textContent = 'Army summary';
-      label.append(cb, nm);
-      const out = document.createElement('div');
-      out.className = 'card-out';
-      out.textContent = '…';
-      item.append(label, out);
-      item.classList.toggle('unchecked', !summarySelected);
-      els.viewer.appendChild(item);
-      cb.addEventListener('change', () => {
-        summarySelected = cb.checked;
-        item.classList.toggle('unchecked', !cb.checked);
-        syncSelectAllLabel();
-        invalidatePdf();
-      });
-      renderSvg(sdoc)
-        .then((svg) => { if (token === previewToken) out.innerHTML = svg; })
-        .catch((err) => { out.innerHTML = `<pre class="err">${err.message || err}</pre>`; });
-    }
+  // Aux cards (army summary, army rules) at the top, each with a checkbox like
+  // the unit cards.
+  for (const { key, name, doc, wide } of auxCards()) {
+    if (!doc) continue;
+    const item = document.createElement('div');
+    item.className = wide ? 'card-item summary' : 'card-item'; // .summary = wider landscape cell
+    const label = document.createElement('label');
+    label.className = 'card-check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !auxDeselected.has(key);
+    cb.dataset.aux = key;
+    const nm = document.createElement('span');
+    nm.className = 'card-name';
+    nm.textContent = name;
+    label.append(cb, nm);
+    const out = document.createElement('div');
+    out.className = 'card-out';
+    out.textContent = '…';
+    item.append(label, out);
+    item.classList.toggle('unchecked', !cb.checked);
+    els.viewer.appendChild(item);
+    cb.addEventListener('change', () => {
+      if (cb.checked) auxDeselected.delete(key); else auxDeselected.add(key);
+      item.classList.toggle('unchecked', !cb.checked);
+      syncSelectAllLabel();
+      invalidatePdf();
+    });
+    renderSvg(doc)
+      .then((svg) => { if (token === previewToken) out.innerHTML = svg; })
+      .catch((err) => { out.innerHTML = `<pre class="err">${err.message || err}</pre>`; });
   }
   for (const { index, name } of units) {
     const item = document.createElement('div');
@@ -553,8 +560,8 @@ function renderCards(token) {
 function syncSelectAllLabel() {
   if (!army || !currentRenderer || !currentRenderer.perCardPreview) return;
   const units = currentRenderer.unitList(army);
-  const hasSummary = !!currentRenderer.summaryDoc;
-  const all = units.every((u) => cardSelection.has(u.index)) && (!hasSummary || summarySelected);
+  const aux = auxCards();
+  const all = units.every((u) => cardSelection.has(u.index)) && aux.every((c) => !auxDeselected.has(c.key));
   els.selectAll.textContent = all ? 'Unselect all' : 'Select all';
 }
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="40k Roster PDF">
+  <!-- Dark rounded tile (matches the app's dark topbar) -->
+  <rect width="64" height="64" rx="14" fill="#1a1a1a"/>
+  <!-- The quick-reference sheet -->
+  <rect x="17" y="11" width="30" height="42" rx="3" fill="#ffffff"/>
+  <!-- Accent title bar (the sheet's header band) -->
+  <rect x="21" y="16" width="22" height="8" rx="1.6" fill="#c8102e"/>
+  <!-- Table rows: one bold header line, then lighter data lines -->
+  <rect x="21" y="30" width="22" height="3.2" rx="1.6" fill="#1a1a1a"/>
+  <rect x="21" y="37" width="22" height="3.2" rx="1.6" fill="#9aa0a6"/>
+  <rect x="21" y="44" width="22" height="3.2" rx="1.6" fill="#9aa0a6"/>
+</svg>

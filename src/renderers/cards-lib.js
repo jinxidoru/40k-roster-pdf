@@ -4,7 +4,7 @@
 // style variants. Pure/browser-safe — everything returns Typst source strings.
 
 import {
-  clean, formatKeywords, ts, mk, statVal,
+  clean, formatKeywords, ts, mk, statVal, armyRules,
   splitProfiles, rosterGroups, subsetKeywords, datasheetGroups, resolveAccent,
 } from './shared.js';
 
@@ -345,6 +345,40 @@ export function preamble(accent, titlefont = 'Anton') {
     })
   })
 }
+
+// Build a whole-army "rules" card as an array of fixed-size cards: a full-bleed
+// title bar, then the rules (and, when included, enhancements) flowing across as
+// many cards as needed. No stat rail — just a titled text column. Same packer
+// shape as makecards; call within a #context (uses measure).
+//   u: (title: str, blocks: (content...))
+#let makerulescards(u, cw, ch, round: true) = {
+  let ipad = 2.6mm
+  let gap = 3pt
+  let innerW = cw - 2 * cardbleed
+  let innerH = ch - 2 * cardbleed
+  let header = titlebar(u.title, 10pt)
+  let headerH = measure(box(width: innerW, header)).height
+  let bodyW = innerW - 2 * ipad
+  let avail = innerH - headerH - ipad - 0.8mm
+  let cards = ()
+  let cur = ()
+  let curH = 0pt
+  for b in u.blocks {
+    let bh = measure(box(width: bodyW, b)).height + gap
+    if curH + bh > avail and cur.len() > 0 { cards.push(cur); cur = (); curH = 0pt }
+    cur.push(b); curH += bh
+  }
+  if cur.len() > 0 or cards.len() == 0 { cards.push(cur) }
+  let n = cards.len()
+  cards.enumerate().map(pair => {
+    let i = pair.at(0)
+    let bodyblock = block(width: 100%, inset: (x: ipad, top: 0.8mm, bottom: ipad), stack(spacing: gap, ..pair.at(1)))
+    cardframe(cw, ch, round: round, {
+      grid(rows: (auto, 1fr), header, bodyblock)
+      if n > 1 { place(top + right, dx: -1mm, dy: 1mm, box(fill: accent, inset: (x: 2.5pt, y: 0.8pt), radius: 2pt, text(size: 5pt, fill: onaccent, weight: "bold", str(i + 1) + "/" + str(n)))) }
+    })
+  })
+}
 `;
 }
 
@@ -378,6 +412,32 @@ function enhancementBlocks(view) {
     const name = e.points != null ? `${e.name} (${e.points} pts)` : e.name;
     return `enh(${ts(name)}, ${ts(clean(e.text || ''))})`;
   });
+}
+
+// A Typst dict for the whole-army rules card: army + detachment rules as ability
+// paragraphs, and — when opts.enhancements is set — the army's enhancements under
+// a clearly labelled "Enhancements" section so they read as enhancements, not
+// rules. Title reflects the content (falls back to "Enhancements" if a roster
+// carries only enhancements and no army rules).
+function rulesDict(army, opts = {}) {
+  const rules = armyRules(army);
+  const enhancements = opts.enhancements ? (army.enhancements || []) : [];
+  const blocks = rules.map((r) => `abil(${ts(r.name)}, ${ts(clean(r.text || '') || '(see rulebook)')})`);
+  if (enhancements.length) {
+    if (blocks.length) blocks.push('hardline');
+    blocks.push(`seclabel(${ts('Enhancements')})`);
+    for (const e of enhancements) {
+      const name = e.points != null ? `${e.name} (${e.points} pts)` : e.name;
+      blocks.push(`enh(${ts(name)}, ${ts(clean(e.text || ''))})`);
+    }
+  }
+  const title = rules.length ? 'Army Rules' : 'Enhancements';
+  return `(title: ${ts(title)}, blocks: ${arrayLit(blocks)})`;
+}
+
+// Whether the rules card has any content to show for these options.
+export function rulesCardHasContent(army, withEnhancements) {
+  return armyRules(army).length > 0 || (withEnhancements && (army.enhancements || []).length > 0);
 }
 
 // Shared flowing-block list: weapons (via `fn`), then abilities, then a labelled
@@ -635,6 +695,18 @@ export function previewUnitDoc(view, sizeKey, accentHex, opts = {}) {
 `;
 }
 
+// Standalone preview doc for the whole-army rules card(s), stacked (portrait,
+// rounded corners). `withEnh` folds the army's enhancements onto the card.
+export function rulesCardDoc(army, sizeKey, accentHex, opts = {}) {
+  const { w, h } = CARD_SIZES[sizeKey] || CARD_SIZES.standard;
+  return `${preamble(accentHex, 'Anton')}
+#set page(width: ${w + 8}mm, height: auto, margin: 4mm)
+#context {
+  stack(dir: ttb, spacing: 4mm, ..makerulescards(${rulesDict(army, { enhancements: !!opts.withEnh })}, ${w}mm, ${h}mm, round: true))
+}
+`;
+}
+
 // Selected units' cards imposed onto the print sheet: uniform butt-cut grid,
 // centered, with short cut ticks in the outer margins at each gridline.
 export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
@@ -652,6 +724,13 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   const summaryLit = (opts.army && copies > 0)
     ? summaryCardsLit(opts.army, w, h, false, { showPoints: opts.showPoints }) // landscape, square corners
     : '()';
+  // Whole-army rules card(s) — portrait like the unit cards, so they tile
+  // directly (no rotation). Included when requested and there's content.
+  const includeRules = opts.includeRules && opts.army &&
+    rulesCardHasContent(opts.army, !!opts.rulesEnhancements);
+  const rulesLit = includeRules
+    ? `makerulescards(${rulesDict(opts.army, { enhancements: !!opts.rulesEnhancements })}, cw, ch, round: false)`
+    : '()';
   return `${preamble(accentHex, 'Anton')}
 #set page(width: ${pw}mm, height: ${ph}mm, margin: 0pt)
 #context {
@@ -664,6 +743,7 @@ export function imposeDoc(views, sizeKey, paperKey, accentHex, opts = {}) {
   // header lands on the card edge (not the middle).
   let summary = (${summaryLit}).map(c => rotate(90deg, reflow: true, c))
   for _c in range(${copies}) { all = all + summary }
+  all = all + ${rulesLit}
   for u in ${units} { all = all + makecards(u, cw, ch, round: false, invBottom: ${inv}) }
   let cols = calc.max(1, calc.floor(${pw}mm / cw))
   let rows = calc.max(1, calc.floor(${ph}mm / ch))
@@ -763,7 +843,15 @@ function summaryModel(army, opts, S) {
       rows.push([
         ...(showCount ? ['[]'] : []),
         `[#h(0.6em)#text(size: ${S.secName}pt, fill: luma(110), style: "italic")[${mk(s.name)}]]`,
-        ...SUMMARY_STAT_KEYS.map((k) => `[#text(size: ${S.secCell}pt, fill: luma(110))[${mk(statVal(s.chars, k) || '—')}]]`),
+        // A stat that DIFFERS from the main profile prints in the main (ink)
+        // color; matching stats stay faint, so the difference stands out.
+        ...SUMMARY_STAT_KEYS.map((k) => {
+          const v = statVal(s.chars, k) || '—';
+          const same = v === (statVal(chars, k) || '—');
+          return same
+            ? `[#text(size: ${S.secCell}pt, fill: luma(110))[${mk(v)}]]`
+            : `[#text(size: ${S.secCell}pt)[${mk(v)}]]`;
+        }),
         ...(showPoints ? ['[]'] : []),
       ].join(', '));
     }

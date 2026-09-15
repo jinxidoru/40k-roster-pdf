@@ -2,7 +2,7 @@
 // render(army, options) -> Typst source string. Pure/browser-safe.
 
 import {
-  clean, formatKeywords, ts, mk, statVal,
+  clean, formatKeywords, ts, mk, statVal, bool, armyRules,
   splitProfiles, rosterGroups, subsetKeywords, datasheetGroups, resolveAccent,
 } from './shared.js';
 
@@ -88,12 +88,18 @@ function rosterTable(units, opts = {}) {
       ...(showPoints ? [u.points == null ? ts('—') : ts(String(u.points))] : []),
     ].join(', '));
 
-    // Secondary profiles: indented, italic/faint, no count/points.
+    // Secondary profiles: indented, italic/faint, no count/points. A stat that
+    // DIFFERS from the main profile is printed in the main (black) color so the
+    // difference stands out against its faint, matching siblings.
     for (const s of secondary) {
       rows.push([
         ...(showCount ? [ts('')] : []),
         `[#h(1em)#text(fill: luma(110), style: "italic")[${mk(s.name)}]]`,
-        ...STAT_KEYS.map((k) => `[#text(fill: luma(110))[${mk(statVal(s.chars, k) || '—')}]]`),
+        ...STAT_KEYS.map((k) => {
+          const v = statVal(s.chars, k) || '—';
+          const same = v === (statVal(chars, k) || '—');
+          return same ? `[#text(fill: luma(110))[${mk(v)}]]` : `[${mk(v)}]`;
+        }),
         ...(showPoints ? [ts('')] : []),
       ].join(', '));
     }
@@ -231,13 +237,6 @@ function unitDetail(u, opts = {}) {
 // Letter), the US analogue of A5.
 const PAPERS = { 'us-letter': 'us-letter', 'half-letter': 'us-statement', a4: 'a4', a5: 'a5' };
 
-// Options may arrive as real booleans (checkbox) or "true"/"false" strings
-// (persisted/query). Normalize to a boolean with an explicit default.
-function bool(v, def) {
-  if (v === undefined || v === null || v === '') return def;
-  return v === true || v === 'true';
-}
-
 // Keyword-glossary mode: 'none' | 'include' | 'separate'. Accepts legacy values
 // (true / 'show' -> 'include') so older persisted/CLI values still work.
 function glossaryMode(v) {
@@ -268,6 +267,9 @@ function render(army, options = {}) {
     coreFactionInAbilities: bool(options.coreFactionInAbilities, true),
     keywordGlossary: glossaryMode(options.keywordGlossary),
   };
+  // Where enhancements live: with each unit (inline on its datasheet) when on,
+  // else in a separate section grouped with the army & detachment rules (default).
+  const enhWithUnit = bool(options.enhancementsWithUnit, false);
   let doc = preamble(accent, paper) + '\n\n';
 
   const sub = [
@@ -285,16 +287,12 @@ function render(army, options = {}) {
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
   );
 
-  doc += rosterTable(units, { showPoints: bool(options.showPoints, true) }) + '\n';
-  // Datasheets: units differing only by enhancement share one datasheet, which
-  // lists all their enhancements.
-  for (const g of datasheetGroups(units)) doc += unitDetail(g.unit, { ...opts, enhancements: g.enhancements });
-
-  if (army.enhancements.length) {
-    doc += `#section("Enhancements")\n`;
-    for (const e of army.enhancements) {
-      doc += `#text(size: 7pt)[#text(weight: "bold")[${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text))}]\n\n`;
-    }
+  doc += rosterTable(units, { showPoints: bool(options.showPoints, false) }) + '\n';
+  // Datasheets: units differing only by enhancement share one datasheet. Their
+  // enhancements are listed inline here only when "with unit" is on; otherwise
+  // they're grouped into the rules section below.
+  for (const g of datasheetGroups(units)) {
+    doc += unitDetail(g.unit, { ...opts, enhancements: enhWithUnit ? g.enhancements : [] });
   }
 
   if (army.stratagems.length) {
@@ -306,13 +304,7 @@ function render(army, options = {}) {
   }
 
   // Shared army/detachment rules (names + any text), de-duplicated.
-  const seen = new Set();
-  const rules = [];
-  for (const u of army.units) {
-    for (const r of u.rules || []) {
-      if (!seen.has(r.name)) { seen.add(r.name); rules.push(r); }
-    }
-  }
+  const rules = armyRules(army);
   if (rules.length) {
     doc += `#section("Army & Detachment Rules")\n`;
     for (const r of rules) {
@@ -320,6 +312,16 @@ function render(army, options = {}) {
       doc += t
         ? `#text(size: 7pt)[#text(weight: "bold")[${mk(r.name)} — ] ${mk(t)}]\n\n`
         : `#text(size: 7pt)[#text(weight: "bold")[${mk(r.name)}] #text(fill: luma(150))[(see rulebook)]]\n\n`;
+    }
+  }
+
+  // Enhancements: shown inline with their units when enhWithUnit; otherwise in
+  // their own section below the army rules (same band styling as the rules).
+  const enhancements = enhWithUnit ? [] : army.enhancements;
+  if (enhancements.length) {
+    doc += `#section("Enhancements")\n`;
+    for (const e of enhancements) {
+      doc += `#text(size: 7pt)[#text(weight: "bold")[${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text))}]\n\n`;
     }
   }
 
@@ -391,8 +393,8 @@ export default {
       key: 'showPoints',
       label: 'Points column',
       type: 'bool',
-      default: true,
-      help: 'Show a Pts column in the roster summary table with each unit’s points cost. Turn off for a cleaner table when points aren’t needed.',
+      default: false,
+      help: 'Show a Pts column in the roster summary table with each unit’s points cost. Off by default for a cleaner table.',
     },
     {
       key: 'weaponHeaders',
@@ -416,6 +418,13 @@ export default {
       help: 'Fold each unit’s Core and Faction ability keywords into the front of its abilities line (e.g. “Core — Deep Strike, Infiltrators | Faction — Oath of Moment”) instead of showing them on their own separate line above the abilities.',
     },
     {
+      key: 'enhancementsWithUnit',
+      label: 'Enhancements with unit',
+      type: 'bool',
+      default: false,
+      help: 'On: show each enhancement inline on its unit’s datasheet. Off (default): list them in a separate section grouped with the army & detachment rules, each clearly marked “Enhancement — …”.',
+    },
+    {
       key: 'keywordGlossary',
       label: 'Keyword glossary',
       type: 'select',
@@ -429,7 +438,7 @@ export default {
     },
     {
       key: 'accent',
-      label: 'Accent color',
+      label: 'Color',
       type: 'color',
       default: 'faction',
       help: 'Color for the title bar and table headers. Default uses the army’s faction/sub-faction color; header text switches to dark automatically on light colors.',
