@@ -163,7 +163,9 @@ select {
 .card-item { display: flex; flex-direction: column; gap: 5px; width: 200px; }
 .card-item.summary { width: 320px; } /* landscape summary card is wider */
 .card-item.unchecked { opacity: .4; }
-.card-check { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+/* position/z-index keeps the checkbox on top and clickable even if a preview
+   SVG overlaps its box (some cards render taller than their laid-out cell). */
+.card-check { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .card-check input { cursor: pointer; }
 .card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-out svg { display: block; width: 100%; height: auto; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .15); }
