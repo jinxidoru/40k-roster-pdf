@@ -287,7 +287,7 @@ function render(army, options = {}) {
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
   );
 
-  doc += rosterTable(units, { showPoints: bool(options.showPoints, false) }) + '\n';
+  doc += rosterTable(units, { showPoints: bool(options.showPoints, true) }) + '\n';
   // Datasheets: units differing only by enhancement share one datasheet. Their
   // enhancements are listed inline here only when "with unit" is on; otherwise
   // they're grouped into the rules section below.
@@ -393,8 +393,8 @@ export default {
       key: 'showPoints',
       label: 'Points column',
       type: 'bool',
-      default: false,
-      help: 'Show a Pts column in the roster summary table with each unit’s points cost. Off by default for a cleaner table.',
+      default: true,
+      help: 'Show a Pts column in the roster summary table with each unit’s points cost. On by default; turn off for a cleaner table.',
     },
     {
       key: 'weaponHeaders',
