@@ -43,7 +43,7 @@ function preamble(accent, paper) {
   v(2pt)
 }
 #let unitband(name, meta) = {
-  block(width: 100%, inset: (x: 4pt, y: 2.5pt), fill: luma(248), stroke: (bottom: 0.6pt + accent))[
+  block(width: 100%, below: 3pt, inset: (x: 4pt, y: 2.5pt), fill: luma(248), stroke: (bottom: 0.6pt + accent))[
     #grid(
       columns: (auto, 1fr), column-gutter: 16pt, align: top,
       text(weight: "bold", size: 8.5pt, name),
@@ -130,6 +130,17 @@ function rosterTable(units, opts = {}) {
   );
 }
 
+// A weapon name ending in one or more "(…)" groups — e.g. an Ork weapon-mode
+// qualifier like "Shokk Attack Gun (More Dakka)", or the doubled "Busta Rokkit
+// Launcha - Hunter (Hunter: MONSTER/VEHICLE) (More Dakka)" — drops those trailing
+// groups onto their own line under the name as grey subtitle text (same size as
+// the name, parentheses kept). All trailing groups move; parens mid-name stay.
+function weaponNameCell(name) {
+  const m = /^(.+?)\s*((?:\([^()]+\)\s*)+)$/.exec(String(name));
+  if (!m) return ts(name);
+  return `[${mk(m[1])}#linebreak()#text(fill: luma(130))[${mk(m[2].trim())}]]`;
+}
+
 function weaponTable(u, opts = {}) {
   const all = [
     ...u.ranged.map((w) => ({ ...w, kind: 'R' })),
@@ -145,7 +156,7 @@ function weaponTable(u, opts = {}) {
     const marker = w.kind === 'R' ? 'ico("⌖", dy: -0.5pt)' : 'ico("⚔")';
     return [
       marker,
-      ts(w.name),
+      weaponNameCell(w.name),
       ts(range),
       ts(c.A || '—'),
       ts(skill),
@@ -172,11 +183,39 @@ function weaponTable(u, opts = {}) {
     (headerless ? '' : `  ${header},\n`) +
     rows.map((r) => `  ${r},`).join('\n') +
     `\n)\n`;
-  return headerless ? `#block(above: 2pt, breakable: false)[\n${table}]\n` : table;
+  // Tuck the table up close under the unit-name band (headerless already sat
+  // tight at 2pt; the header case used the default block gap, which was large).
+  return `#block(above: ${headerless ? 2 : 3}pt, breakable: false)[\n${table}]\n`;
 }
 
 // Abilities inline: bold Name — text, no surrounding quotes, faint pipe between.
 const ABIL_SEP = '  #text(fill: luma(180))[|]  ';
+
+// Split rendered detail snippets into two roughly equal-height columns. Typst's
+// #columns() doesn't balance inside a non-breakable block (it fills column one
+// down the whole page), so we split by hand. This is a PREFIX split — left gets
+// items[0..k], right gets the rest — so each column keeps the original order
+// (which matters for the alphabetical glossary); k is chosen so the left column
+// holds about half the total text (approximated by rendered snippet length).
+function splitBalanced(items) {
+  const weights = items.map((s) => s.length);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  let k = items.length;
+  for (let i = 0; i < items.length; i++) {
+    if (acc + weights[i] >= total / 2) {
+      // The midpoint falls inside item i: keep it on the left if that lands
+      // closer to half than stopping before it would, else start the right here.
+      const over = acc + weights[i] - total / 2;
+      const under = total / 2 - acc;
+      k = over < under ? i + 1 : i;
+      break;
+    }
+    acc += weights[i];
+  }
+  k = Math.min(Math.max(k, 1), items.length); // always leave at least one on the left
+  return [items.slice(0, k), items.slice(k)];
+}
 function abilityItem(a) {
   const t = clean(a.text);
   const name = `#text(weight: "bold")[${mk(a.name)}]`;
@@ -185,6 +224,7 @@ function abilityItem(a) {
 
 function unitDetail(u, opts = {}) {
   const parts = [];
+  const twoCol = opts.detailsTwoColumn === true;
 
   // Title meta: model count and keywords (UPPERCASE); points/unit-count omitted.
   const meta = [];
@@ -197,6 +237,10 @@ function unitDetail(u, opts = {}) {
   const wt = weaponTable(u, opts);
   if (wt) parts.push(wt.trimEnd());
 
+  // Everything below the weapon list (core/faction, abilities, enhancements) is
+  // collected here so the two-column option can wrap it as one balanced block.
+  const below = [];
+
   // Core / Faction ability keywords. Either on their own compact line (default)
   // or folded into the front of the abilities line as "*Core* — …".
   const cf = [];
@@ -208,25 +252,48 @@ function unitDetail(u, opts = {}) {
     const line = cf
       .map(({ label, vals }) => `#text(weight: "bold")[${label}: ] ${mk(vals.join(', '))}`)
       .join('    #text(fill: luma(180))[·]    ');
-    parts.push(`#text(size: 6.6pt, fill: luma(70))[${line}]`);
+    below.push(`#text(size: 6.6pt, fill: luma(70))[${line}]`);
   }
 
-  const items = [];
-  if (inAbilities) {
-    for (const { label, vals } of cf) items.push(`#text(weight: "bold")[${label}] — ${mk(vals.join(', '))}`);
-  }
-  for (const a of u.abilities) items.push(abilityItem(a));
-  if (items.length) {
-    parts.push(`#text(size: 6.9pt)[${items.join(ABIL_SEP)}]`);
+  const cfItems = inAbilities
+    ? cf.map(({ label, vals }) => `#text(weight: "bold")[${label}] — ${mk(vals.join(', '))}`)
+    : [];
+  const abilItems = u.abilities.map(abilityItem);
+  // Transport capacity is a non-statline profile (dropped from the stat table by
+  // splitProfiles); surface it here as a "Transport" ability instead.
+  const cap = (u.stats || []).find((s) => s.chars && s.chars.Capacity);
+  if (cap) abilItems.push(abilityItem({ name: 'Transport', text: cap.chars.Capacity }));
+  if (twoCol) {
+    // Two-column: Core + Faction share one line; each ability then gets its own
+    // paragraph so the columns break cleanly between items.
+    if (cfItems.length) below.push(`#text(size: 6.9pt)[${cfItems.join(ABIL_SEP)}]`);
+    for (const it of abilItems) below.push(`#text(size: 6.9pt)[${it}]`);
+  } else {
+    // Single-column: the compact pipe-separated line as before.
+    const items = [...cfItems, ...abilItems];
+    if (items.length) below.push(`#text(size: 6.9pt)[${items.join(ABIL_SEP)}]`);
   }
   // Enhancements: the coalesced list (units differing only by enhancement share
   // one datasheet), else this unit's single enhancement.
   const enhancements = opts.enhancements || (u.enhancement ? [u.enhancement] : []);
   for (const e of enhancements) {
-    parts.push(`#text(size: 6.9pt)[#text(weight: "bold")[Enhancement — ${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text || ''))}]`);
+    below.push(`#text(size: 6.9pt)[#text(weight: "bold")[Enhancement — ${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text || ''))}]`);
   }
   if (u.enhancementMissing) {
-    parts.push(`#text(size: 6.9pt, fill: red)[Enhancement not found: ${mk(u.enhancementMissing)}]`);
+    below.push(`#text(size: 6.9pt, fill: red)[Enhancement not found: ${mk(u.enhancementMissing)}]`);
+  }
+
+  if (below.length) {
+    if (twoCol) {
+      const [left, right] = splitBalanced(below);
+      parts.push(
+        `#grid(columns: (1fr, 1fr), column-gutter: 14pt, align: top,\n` +
+        `  [\n${left.join('\n\n')}\n],\n` +
+        `  [\n${right.join('\n\n')}\n],\n)`,
+      );
+    } else {
+      parts.push(...below);
+    }
   }
 
   // Keep each datasheet whole: never split a unit across a page boundary.
@@ -258,6 +325,24 @@ function kwBase(s) {
     .trim();
 }
 
+// Emit a list of pre-rendered item snippets as a section body. Two-column uses a
+// hand-balanced grid rather than Typst's #columns (which fills the first column
+// top-to-bottom instead of balancing, leaving short sections lopsided). A grid
+// row still breaks across pages, so a long section (e.g. the glossary) paginates.
+// Each item is wrapped in a non-breakable block so a page break between columns
+// never splits an item mid-rule — an item that won't fit moves whole to the next
+// page instead. (spacing:0.6em keeps the inter-item gap close to paragraph flow.)
+function sectionList(items, twoCol) {
+  if (!twoCol) return items.map((it) => `${it}\n\n`).join('');
+  const cell = (arr) => arr.map((it) => `#block(breakable: false, spacing: 0.6em)[${it}]`).join('\n');
+  const [left, right] = splitBalanced(items);
+  return (
+    `#grid(columns: (1fr, 1fr), column-gutter: 14pt, align: top,\n` +
+    `  [\n${cell(left)}\n],\n` +
+    `  [\n${cell(right)}\n],\n)\n\n`
+  );
+}
+
 function render(army, options = {}) {
   const accent = resolveAccent(options, army);
   const paper = PAPERS[options.paper] || 'us-letter';
@@ -265,12 +350,19 @@ function render(army, options = {}) {
     weaponHeaders: bool(options.weaponHeaders, true),
     weaponKeywordsCaps: bool(options.weaponKeywordsCaps, false),
     coreFactionInAbilities: bool(options.coreFactionInAbilities, true),
+    detailsTwoColumn: bool(options.detailsTwoColumn, true),
+    pageNumbers: bool(options.pageNumbers, false),
     keywordGlossary: glossaryMode(options.keywordGlossary),
   };
   // Where enhancements live: with each unit (inline on its datasheet) when on,
   // else in a separate section grouped with the army & detachment rules (default).
   const enhWithUnit = bool(options.enhancementsWithUnit, false);
   let doc = preamble(accent, paper) + '\n\n';
+
+  // Optional centered "current/total" page number in the bottom margin.
+  if (opts.pageNumbers) {
+    doc += `#set page(footer: context align(center, text(size: 7pt, fill: luma(150))[#numbering("1/1", counter(page).get().first(), counter(page).final().first())]))\n\n`;
+  }
 
   const sub = [
     army.meta.faction,
@@ -307,12 +399,13 @@ function render(army, options = {}) {
   const rules = armyRules(army);
   if (rules.length) {
     doc += `#section("Army & Detachment Rules")\n`;
-    for (const r of rules) {
+    const items = rules.map((r) => {
       const t = clean(r.text);
-      doc += t
-        ? `#text(size: 7pt)[#text(weight: "bold")[${mk(r.name)} — ] ${mk(t)}]\n\n`
-        : `#text(size: 7pt)[#text(weight: "bold")[${mk(r.name)}] #text(fill: luma(150))[(see rulebook)]]\n\n`;
-    }
+      return t
+        ? `#text(size: 7pt)[#text(weight: "bold")[${mk(r.name)} — ] ${mk(t)}]`
+        : `#text(size: 7pt)[#text(weight: "bold")[${mk(r.name)}] #text(fill: luma(150))[(see rulebook)]]`;
+    });
+    doc += sectionList(items, opts.detailsTwoColumn);
   }
 
   // Enhancements: shown inline with their units when enhWithUnit; otherwise in
@@ -320,9 +413,9 @@ function render(army, options = {}) {
   const enhancements = enhWithUnit ? [] : army.enhancements;
   if (enhancements.length) {
     doc += `#section("Enhancements")\n`;
-    for (const e of enhancements) {
-      doc += `#text(size: 7pt)[#text(weight: "bold")[${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text))}]\n\n`;
-    }
+    const items = enhancements.map((e) =>
+      `#text(size: 7pt)[#text(weight: "bold")[${mk(e.name)} (${e.points} pts) — ] ${mk(clean(e.text))}]`);
+    doc += sectionList(items, opts.detailsTwoColumn);
   }
 
   // Keyword glossary: define every weapon/core keyword the army references AND
@@ -359,9 +452,9 @@ function render(army, options = {}) {
     if (entries.length) {
       if (opts.keywordGlossary === 'separate') doc += `#pagebreak()\n`;
       doc += `#section("Keyword Glossary")\n`;
-      for (const { name, text } of entries) {
-        doc += `#text(size: 7pt)[#text(weight: "bold")[${mk(name)} — ] ${mk(clean(text))}]\n\n`;
-      }
+      const items = entries.map(({ name, text }) =>
+        `#text(size: 7pt)[#text(weight: "bold")[${mk(name)} — ] ${mk(clean(text))}]`);
+      doc += sectionList(items, opts.detailsTwoColumn);
       if (undefinedCount) {
         doc += `#text(size: 6.4pt, fill: luma(150), style: "italic")[${undefinedCount} other referenced keyword${undefinedCount === 1 ? '' : 's'} ${undefinedCount === 1 ? 'has' : 'have'} no definition available.]\n\n`;
       }
@@ -390,6 +483,13 @@ export default {
       ],
     },
     {
+      key: 'pageNumbers',
+      label: 'Page numbers',
+      type: 'bool',
+      default: false,
+      help: 'Show a page number (e.g. “1/3”) centered at the bottom of every page.',
+    },
+    {
       key: 'showPoints',
       label: 'Points column',
       type: 'bool',
@@ -416,6 +516,13 @@ export default {
       type: 'bool',
       default: true,
       help: 'Fold each unit’s Core and Faction ability keywords into the front of its abilities line (e.g. “Core — Deep Strike, Infiltrators | Faction — Oath of Moment”) instead of showing them on their own separate line above the abilities.',
+    },
+    {
+      key: 'detailsTwoColumn',
+      label: 'Two-column details',
+      type: 'bool',
+      default: true,
+      help: 'Lay out running text in two balanced columns: the details below each unit’s weapon table (core/faction, abilities, enhancements) and the Army & Detachment Rules, Enhancements, and Keyword Glossary sections. Each ability becomes its own line so the columns break cleanly between them. On by default; turn off for a single-column layout.',
     },
     {
       key: 'enhancementsWithUnit',

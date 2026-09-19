@@ -119,25 +119,35 @@ export function subsetKeywords(keywords) {
   return out;
 }
 
+// Characteristics that make a profile a real statline (as opposed to, e.g., a
+// Transport "Capacity" profile that carries only descriptive text).
+const STATLINE_KEYS = ['M', 'T', 'Sv', 'InSv', 'W', 'LD', 'OC'];
+function hasStatline(chars) {
+  return STATLINE_KEYS.some((k) => String(chars[k] ?? '').trim() !== '');
+}
+
 // The main profile is the bulk trooper, whose name matches the unit (e.g.
 // "Warbiker" for "Warbikers"); leader/variant profiles are secondary. Match
 // exact, then singular, then name-is-a-prefix, else first. Alternate profiles
 // whose characteristics are identical to the main profile (e.g. a "Warbiker
 // Nob" statted the same as "Warbiker") are dropped — they add nothing to the
-// list — as are duplicate alternates.
+// list — as are duplicate alternates. Non-statline profiles (e.g. a Transport
+// "Capacity" line) are dropped too: they'd otherwise show as an all-dashes row.
 export function splitProfiles(u) {
   if (!u.stats || !u.stats.length) return { main: null, secondary: [] };
+  const lines = u.stats.filter((s) => hasStatline(s.chars));
+  const pool = lines.length ? lines : u.stats; // fall back if nothing has stats
   const nameLc = u.name.toLowerCase();
   const singular = nameLc.replace(/s$/, '');
   const main =
-    u.stats.find((s) => s.name.toLowerCase() === nameLc) ||
-    u.stats.find((s) => s.name.toLowerCase() === singular) ||
-    u.stats.find((s) => nameLc.startsWith(s.name.toLowerCase())) ||
-    u.stats[0];
+    pool.find((s) => s.name.toLowerCase() === nameLc) ||
+    pool.find((s) => s.name.toLowerCase() === singular) ||
+    pool.find((s) => nameLc.startsWith(s.name.toLowerCase())) ||
+    pool[0];
   const mainSig = JSON.stringify(main.chars);
   const seen = new Set([mainSig]);
   const secondary = [];
-  for (const s of u.stats) {
+  for (const s of pool) {
     if (s === main) continue;
     const sig = JSON.stringify(s.chars);
     if (seen.has(sig)) continue; // identical to the main (or an earlier) profile

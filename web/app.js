@@ -401,9 +401,12 @@ async function preloadFromQuery() {
   const name = new URLSearchParams(location.search).get('preload');
   if (!name || !isLocalhost()) return;
   const safe = name.replace(/[^\w.\- ]/g, ''); // strip path separators etc.
+  // Allow the .json to be omitted: ?preload=1k+Stomps → staging/1k Stomps.json
+  // (URLSearchParams already turns the "+" into a space).
+  const file = /\.json$/i.test(safe) ? safe : `${safe}.json`;
   try {
-    const res = await fetch(`staging/${encodeURIComponent(safe)}`);
-    if (!res.ok) { setStatus(`Preload failed: staging/${safe} (HTTP ${res.status})`, true); return; }
+    const res = await fetch(`staging/${encodeURIComponent(file)}`);
+    if (!res.ok) { setStatus(`Preload failed: staging/${file} (HTTP ${res.status})`, true); return; }
     loadRoster(await res.json());
   } catch (err) {
     setStatus(`Preload failed: ${err.message}`, true);
